@@ -9,7 +9,22 @@ constexpr uint64_t header_id = 0x3242444f49534f45ULL; //"EOSIODB2" little endian
 
 struct environment  {
    environment() {
+#if (defined(__GNUC__) || defined(__clang_major__)) && (defined(_LIBCPP_VERSION) || defined(_GLIBCXX_RELEASE))
+      std::string s;
+#ifdef __clang_major__
+	s = "Clang " + std::to_string(__clang_major__) + " ";
+#else
+	s = "GCC " + std::to_string(__GNUC__) + " ";
+#endif
+#ifdef _GLIBCXX_RELEASE
+	s += "libstdc++ " + std::to_string(_GLIBCXX_RELEASE);
+#else
+	s += "libc++ " + std::to_string(_LIBCPP_VERSION/10000);
+#endif
+      strncpy(compiler, s.c_str(), sizeof(compiler)-1);
+#else
       strncpy(compiler, __VERSION__, sizeof(compiler)-1);
+#endif
    }
 
    enum os_t : unsigned char {
