@@ -68,6 +68,51 @@ static bool on_tempfs_filesystem(std::filesystem::path& path) {
    return false;
 }
 
+void pinnable_mapped_file::probe_dirty() const {
+   static time_t checkin;
+
+   const time_t current_time = time(NULL);
+   if(current_time >= checkin) {
+      size_t num_clean = 0;
+      size_t num_dirty = 0;
+      size_t highest_dirty_page = 0;
+
+      size_t first_page = (uintptr_t )_file_mapped_region.get_address() / getpagesize();
+      size_t page = first_page;
+      size_t remaining = _file_mapped_region.get_size() / getpagesize() - 1;
+
+      int fd = open("/proc/self/pagemap", O_RDONLY);
+      if(fd < 0)
+         return;
+
+      uint64_t pageinfo[32*1024];
+      while(remaining) {
+         int red = pread(fd, pageinfo, std::min(sizeof(pageinfo), remaining*sizeof(uint64_t)), page * sizeof(uint64_t));
+         if(red < 0 || red % sizeof(uint64_t)) {
+            close(fd);
+            return;
+         }
+
+         red /= 8; //now red is number of pages read
+         for(int i = 0; i < red; ++i) {
+            if(pageinfo[i] & 1ULL<<55) {
+               num_dirty++;
+               highest_dirty_page = page+i;
+            }
+            else
+               num_clean++;
+         }
+
+         remaining -= red;
+         page += red;
+      }
+
+      close(fd);
+      printf("CHAINBASE REPORTING IN! %8lu %8lu %8lu\n", num_clean, num_dirty, highest_dirty_page - first_page);
+      checkin = current_time + 15;
+   }
+}
+
 pinnable_mapped_file::pinnable_mapped_file(const std::filesystem::path& dir, bool writable, uint64_t shared_file_size, bool allow_dirty, map_mode mode) :
    _data_file_path(std::filesystem::absolute(dir/"shared_memory.bin")),
    _database_name(dir.filename().string()),

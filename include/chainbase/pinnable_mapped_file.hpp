@@ -60,6 +60,8 @@ class pinnable_mapped_file {
       segment_manager* get_segment_manager() const { return _segment_manager;}
       void             revert_to_mapped_mode();
 
+      void probe_dirty() const;
+
    private:
       void                                          set_mapped_file_db_dirty(bool);
       void                                          load_database_file(boost::asio::io_service& sig_ios);
