@@ -22,13 +22,6 @@ endif()
 
 SET(PLATFORM_LIBRARIES)
 
-if(CMAKE_CXX_STANDARD EQUAL 98)
-   message(FATAL_ERROR "chainbase requires c++20 or newer")
-elseif(NOT CMAKE_CXX_STANDARD)
-   set(CMAKE_CXX_STANDARD 20)
-   set(CMAKE_CXX_STANDARD_REQUIRED ON)
-endif()
-
 if( APPLE )
   # Apple Specific Options Here
   message( STATUS "Configuring ChainBase on OS X" )
@@ -67,6 +60,7 @@ endif()
 file(GLOB HEADERS "include/chainbase/*.hpp")
 add_library( chainbase src/chainbase.cpp src/pinnable_mapped_file.cpp ${HEADERS} )
 target_link_libraries( chainbase PUBLIC ${PLATFORM_LIBRARIES} Boost::system Boost::unit_test_framework )
+target_compile_features(chainbase PUBLIC cxx_std_20)
 
 if(TARGET Boost::asio)
   target_link_libraries( chainbase PUBLIC
