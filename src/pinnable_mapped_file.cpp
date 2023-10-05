@@ -236,9 +236,8 @@ void pinnable_mapped_file::setup_copy_on_write_mapping() {
 
    // then clear the Soft-Dirty bits
    // ------------------------------
-   pagemap_accessor pagemap;
-   if (pagemap.pagemap_supported()) {
-      if (!pagemap.clear_refs())
+   if (pagemap_accessor::pagemap_supported()) {
+      if (!pagemap_accessor::clear_refs())
          BOOST_THROW_EXCEPTION(std::system_error(make_error_code(db_error_code::clear_refs_failed)));
       _instance_tracker.push_back(this); // so we can save dirty pages before another instance calls `clear_refs()`
    }
@@ -267,33 +266,31 @@ void pinnable_mapped_file::revert_to_private_mode() {
 // returns the number of pages flushed to disk
 size_t pinnable_mapped_file::check_memory_and_flush_if_needed() {
    size_t written_pages {0};
-#if 0
    if (_non_file_mapped_mapping || _sharable || !_writable)
       return written_pages;
 
    // we are in `copy_on_write` mode.
    static time_t check_time = 0;
-   constexpr int check_interval = 60; // seconds
-   constexpr size_t one_gb = 1ull << 30;
+   constexpr int check_interval = 30; // seconds
 
    const time_t current_time = time(NULL);
    if(current_time >= check_time) {
       check_time = current_time + check_interval;
 
-      size_t avail_ram_gb = (get_avphys_pages() * sysconf(_SC_PAGESIZE)) / one_gb;
-      if (avail_ram_gb <= 2) {
-         auto [src, sz] = get_region_to_save();
-         pagemap_accessor pagemap;
-         size_t offset = 0;
-         while(offset != sz && written_pages < (one_gb / sysconf(_SC_PAGESIZE))) {
-            size_t copy_size = std::min(_db_size_copy_increment,  sz - offset);
-            if (!pagemap.update_file_from_region({ src + offset, copy_size }, _file_mapping, offset, false, written_pages))
-               break;
-            offset += copy_size;
-         }
+      auto oom_score = pagemap_accessor::read_oom_score();
+      if (oom_score && *oom_score >= 920) {
+         // linux returned a high out-of-memory (oom) score for the current process, indicating a high 
+         // probablility that the process will be killed soon (The valid range is from 0 (never kill) 
+         // to 1000 (always kill). The higher the value is, the higher the probability is that the 
+         // process will be killed).
+         // In order to avoid this, update database file with dirty pages and clear the soft-dirty flag
+         // -------------------------------------------------------------------------------------------
+         for (auto pmm : _instance_tracker)
+            written_pages += pmm->save_database_file(true);
+         if (!pagemap_accessor::clear_refs())
+            BOOST_THROW_EXCEPTION(std::system_error(make_error_code(db_error_code::clear_refs_failed)));
       }
    }
-#endif
    return written_pages;
 }
 
@@ -382,7 +379,7 @@ std::pair<std::byte*, size_t> pinnable_mapped_file::get_region_to_save() const {
    return { (std::byte*)_file_mapped_region.get_address(), _database_size };
 }
 
-void pinnable_mapped_file::save_database_file(bool flush /* = true */) {
+size_t pinnable_mapped_file::save_database_file(bool flush /* = true */) {
    assert(_writable);
    std::cerr << "CHAINBASE: Writing \"" << _database_name << "\" database file, this could take a moment..." << '\n';
    size_t offset = 0;
@@ -418,6 +415,7 @@ void pinnable_mapped_file::save_database_file(bool flush /* = true */) {
       }
    }
    std::cerr << "CHAINBASE: Writing \"" << _database_name << "\" database file, complete." << '\n';
+   return written_pages;
 }
 
 pinnable_mapped_file::pinnable_mapped_file(pinnable_mapped_file&& o)  noexcept :
