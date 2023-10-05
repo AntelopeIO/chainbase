@@ -289,7 +289,7 @@ std::optional<std::pair<size_t, size_t>> pinnable_mapped_file::check_memory_and_
             // soft-dirty flag
             // -------------------------------------------------------------------------------------------
             for (auto pmm : _instance_tracker)
-               written_pages += pmm->save_database_file(true);
+               written_pages += pmm->save_database_file(false);
             if (!pagemap_accessor::clear_refs())
                BOOST_THROW_EXCEPTION(std::system_error(make_error_code(db_error_code::clear_refs_failed)));
          } 
