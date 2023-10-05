@@ -524,7 +524,7 @@ namespace chainbase {
             _db_file.revert_to_private_mode();
          }
 
-         size_t check_memory_and_flush_if_needed() {
+         std::optional<std::pair<size_t, size_t>> check_memory_and_flush_if_needed() {
             return _db_file.check_memory_and_flush_if_needed();
          }
 

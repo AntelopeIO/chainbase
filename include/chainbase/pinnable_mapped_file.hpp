@@ -5,6 +5,7 @@
 #include <boost/interprocess/sync/file_lock.hpp>
 #include <boost/asio/io_service.hpp>
 #include <filesystem>
+#include <optional>
 #include <vector>
 
 namespace chainbase {
@@ -59,7 +60,7 @@ class pinnable_mapped_file {
 
       segment_manager* get_segment_manager() const { return _segment_manager;}
       void             revert_to_private_mode();
-      size_t           check_memory_and_flush_if_needed();
+      std::optional<std::pair<size_t, size_t>> check_memory_and_flush_if_needed();
 
 
    private:
