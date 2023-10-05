@@ -278,12 +278,14 @@ size_t pinnable_mapped_file::check_memory_and_flush_if_needed() {
       check_time = current_time + check_interval;
 
       auto oom_score = pagemap_accessor::read_oom_score();
-      if (oom_score && *oom_score >= 920) {
+      if (oom_score && *oom_score >= 980) {
          // linux returned a high out-of-memory (oom) score for the current process, indicating a high 
-         // probablility that the process will be killed soon (The valid range is from 0 (never kill) 
-         // to 1000 (always kill). The higher the value is, the higher the probability is that the 
-         // process will be killed).
-         // In order to avoid this, update database file with dirty pages and clear the soft-dirty flag
+         // probablility that the process will be killed soon (The valid range is from 0 to 1000.
+         // The higher the value is, the higher the probability is that the process will be killed).
+         // In my experiments I see processes going above 1000 without being killed, and zeroed on a
+         // threshold of 980.
+         // When this threshold is reached, update database file with dirty pages and clear the
+         // soft-dirty flag
          // -------------------------------------------------------------------------------------------
          for (auto pmm : _instance_tracker)
             written_pages += pmm->save_database_file(true);
