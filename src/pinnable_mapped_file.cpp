@@ -278,19 +278,21 @@ std::optional<std::pair<size_t, size_t>> pinnable_mapped_file::check_memory_and_
       check_time = current_time + check_interval;
 
       auto oom_score = pagemap_accessor::read_oom_score();
-      if (oom_score && *oom_score >= 980) {
-         // linux returned a high out-of-memory (oom) score for the current process, indicating a high 
-         // probablility that the process will be killed soon (The valid range is from 0 to 1000.
-         // The higher the value is, the higher the probability is that the process will be killed).
-         // In my experiments I see processes going above 1000 without being killed, and zeroed on a
-         // threshold of 980.
-         // When this threshold is reached, update database file with dirty pages and clear the
-         // soft-dirty flag
-         // -------------------------------------------------------------------------------------------
-         for (auto pmm : _instance_tracker)
-            written_pages += pmm->save_database_file(true);
-         if (!pagemap_accessor::clear_refs())
-            BOOST_THROW_EXCEPTION(std::system_error(make_error_code(db_error_code::clear_refs_failed)));
+      if (oom_score) {
+         if (*oom_score >= 980) {
+            // linux returned a high out-of-memory (oom) score for the current process, indicating a high 
+            // probablility that the process will be killed soon (The valid range is from 0 to 1000.
+            // The higher the value is, the higher the probability is that the process will be killed).
+            // In my experiments I see processes going above 1000 without being killed, and zeroed on a
+            // threshold of 980.
+            // When this threshold is reached, update database file with dirty pages and clear the
+            // soft-dirty flag
+            // -------------------------------------------------------------------------------------------
+            for (auto pmm : _instance_tracker)
+               written_pages += pmm->save_database_file(true);
+            if (!pagemap_accessor::clear_refs())
+               BOOST_THROW_EXCEPTION(std::system_error(make_error_code(db_error_code::clear_refs_failed)));
+         } 
          return std::make_pair(*oom_score, written_pages);
       }
    }
