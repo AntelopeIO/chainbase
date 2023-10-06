@@ -384,19 +384,19 @@ std::pair<std::byte*, size_t> pinnable_mapped_file::get_region_to_save() const {
    return { (std::byte*)_file_mapped_region.get_address(), _database_size };
 }
 
-size_t pinnable_mapped_file::save_database_file(bool flush, bool show_messages) {
+   size_t pinnable_mapped_file::save_database_file(bool flush, bool closing_db) {
    assert(_writable);
-   if (show_messages)
+   if (closing_db)
       std::cerr << "CHAINBASE: Writing \"" << _database_name << "\" database file, this could take a moment..." << '\n';
    size_t offset = 0;
    time_t t = time(nullptr);
    pagemap_accessor pagemap;
    size_t written_pages {0};
    auto [src, sz] = get_region_to_save();
+   bool mapped_writable_instance = std::find(_instance_tracker.begin(), _instance_tracker.end(), this) != _instance_tracker.end();
    
    while(offset != sz) {
       size_t copy_size = std::min(_db_size_copy_increment,  sz - offset);
-      bool mapped_writable_instance = std::find(_instance_tracker.begin(), _instance_tracker.end(), this) != _instance_tracker.end();
       if (!mapped_writable_instance ||
           !pagemap.update_file_from_region({ src + offset, copy_size }, _file_mapping, offset, flush, written_pages)) {
          if (mapped_writable_instance)
@@ -414,14 +414,21 @@ size_t pinnable_mapped_file::save_database_file(bool flush, bool show_messages) 
       }
       offset += copy_size;
 
-      if(show_messages && time(nullptr) != t) {
+      if(closing_db && time(nullptr) != t) {
          t = time(nullptr);
          std::cerr << "CHAINBASE: Writing \"" << _database_name << "\" database file, " <<
             offset/(sz/100) << "% complete..." << '\n';
       }
    }
-   if (show_messages)
+   if (closing_db) {
       std::cerr << "CHAINBASE: Writing \"" << _database_name << "\" database file, complete." << '\n';
+   } else if (mapped_writable_instance) {
+      // we are saving while processing... recreate the copy_on_write mapping with clean pages.
+      _file_mapped_region = bip::mapped_region(_file_mapping, bip::copy_on_write);
+      *((char*)_file_mapped_region.get_address()+header_dirty_bit_offset) = dirty; // set dirty bit in our memory mapping
+      _segment_manager = reinterpret_cast<segment_manager*>((char*)_file_mapped_region.get_address()+header_size);
+      
+   }
    return written_pages;
 }
 

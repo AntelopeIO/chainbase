@@ -66,7 +66,7 @@ class pinnable_mapped_file {
    private:
       void                                          set_mapped_file_db_dirty(bool);
       void                                          load_database_file(boost::asio::io_service& sig_ios);
-      size_t                                        save_database_file(bool flush, bool show_messages);
+      size_t                                        save_database_file(bool flush, bool closing_db);
       static bool                                   all_zeros(const std::byte* data, size_t sz);
       void                                          setup_non_file_mapping();
       void                                          setup_copy_on_write_mapping();
