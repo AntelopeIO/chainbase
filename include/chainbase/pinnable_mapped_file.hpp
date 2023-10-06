@@ -25,7 +25,8 @@ enum db_error_code {
    aborted,
    no_mlock,
    clear_refs_failed,
-   tempfs_incompatible_mode
+   tempfs_incompatible_mode,
+   mmap_address_match_failed
 };
 
 const std::error_category& chainbase_error_category();
@@ -81,6 +82,8 @@ class pinnable_mapped_file {
 
       bip::file_mapping                             _file_mapping;
       bip::mapped_region                            _file_mapped_region;
+      void*                                         _cow_mapping = nullptr;
+      size_t                                        _cow_size = 0;
       void*                                         _non_file_mapped_mapping = nullptr;
       size_t                                        _non_file_mapped_mapping_size = 0;
 

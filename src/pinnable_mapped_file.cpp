@@ -49,6 +49,8 @@ std::string chainbase_error_category::message(int ev) const {
          return "Failed to clear Soft-Dirty bits";
       case tempfs_incompatible_mode:
          return "We recommend storing the state db file on tmpfs only when database-map-mode=mapped";
+      case mmap_address_match_failed:
+         return "Failed to recreate memory mapping at previous address";
       default:
          return "Unrecognized error code";
    }
@@ -229,10 +231,11 @@ void pinnable_mapped_file::setup_copy_on_write_mapping() {
    for (auto pmm : _instance_tracker)
       pmm->save_database_file(true, false);
 
-   _file_mapped_region = bip::mapped_region(_file_mapping, bip::copy_on_write);
-   *((char*)_file_mapped_region.get_address()+header_dirty_bit_offset) = dirty; // set dirty bit in our memory mapping
-
-   _segment_manager = reinterpret_cast<segment_manager*>((char*)_file_mapped_region.get_address()+header_size);
+   auto pgsz = pagemap_accessor::page_size();
+   _cow_size = (_database_size + pgsz - 1) & ~(pgsz - 1);
+   _cow_mapping = mmap(NULL, _cow_size, PROT_READ | PROT_WRITE, MAP_PRIVATE, _file_mapping.get_mapping_handle().handle, 0);
+   *((char*)_cow_mapping + header_dirty_bit_offset) = dirty; // set dirty bit in our memory mapping
+   _segment_manager = reinterpret_cast<segment_manager*>((char*)_cow_mapping + header_size);
 
    // then clear the Soft-Dirty bits
    // ------------------------------
@@ -381,6 +384,8 @@ bool pinnable_mapped_file::all_zeros(const std::byte* data, size_t sz) {
 std::pair<std::byte*, size_t> pinnable_mapped_file::get_region_to_save() const {
    if (_non_file_mapped_mapping)
       return { (std::byte*)_non_file_mapped_mapping, _database_size };
+   if (_cow_mapping)
+      return { (std::byte*)_cow_mapping, _database_size };
    return { (std::byte*)_file_mapped_region.get_address(), _database_size };
 }
 
@@ -425,10 +430,13 @@ size_t pinnable_mapped_file::save_database_file(bool flush, bool closing_db) {
    } else if (mapped_writable_instance) {
       // we are saving while processing... recreate the copy_on_write mapping with clean pages.
       // --------------------------------------------------------------------------------------
-      _file_mapped_region = bip::mapped_region(); // first clear old region so we don't overcommit
-      _file_mapped_region = bip::mapped_region(_file_mapping, bip::copy_on_write);
-      *((char*)_file_mapped_region.get_address()+header_dirty_bit_offset) = dirty; // set dirty bit in our memory mapping
-      _segment_manager = reinterpret_cast<segment_manager*>((char*)_file_mapped_region.get_address()+header_size);
+      void* old_addr = _cow_mapping;
+      munmap(_cow_mapping, _database_size);  // first clear old region so we don't overcommit
+      _cow_mapping = mmap(_cow_mapping, _cow_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_FIXED,
+                          _file_mapping.get_mapping_handle().handle, 0);
+      if (_cow_mapping != old_addr)
+         BOOST_THROW_EXCEPTION(std::system_error(make_error_code(db_error_code::mmap_address_match_failed)));
+      assert(*((char*)_cow_mapping + header_dirty_bit_offset) == dirty); 
       
    }
    return written_pages;
