@@ -289,7 +289,7 @@ std::optional<std::pair<size_t, size_t>> pinnable_mapped_file::check_memory_and_
             // soft-dirty flag
             // -------------------------------------------------------------------------------------------
             for (auto pmm : _instance_tracker)
-               written_pages += pmm->save_database_file(false, false);
+               written_pages += pmm->save_database_file(true, false); // update disk file - with flush
             if (!pagemap_accessor::clear_refs())
                BOOST_THROW_EXCEPTION(std::system_error(make_error_code(db_error_code::clear_refs_failed)));
          } 
@@ -384,7 +384,7 @@ std::pair<std::byte*, size_t> pinnable_mapped_file::get_region_to_save() const {
    return { (std::byte*)_file_mapped_region.get_address(), _database_size };
 }
 
-   size_t pinnable_mapped_file::save_database_file(bool flush, bool closing_db) {
+size_t pinnable_mapped_file::save_database_file(bool flush, bool closing_db) {
    assert(_writable);
    if (closing_db)
       std::cerr << "CHAINBASE: Writing \"" << _database_name << "\" database file, this could take a moment..." << '\n';
@@ -424,6 +424,8 @@ std::pair<std::byte*, size_t> pinnable_mapped_file::get_region_to_save() const {
       std::cerr << "CHAINBASE: Writing \"" << _database_name << "\" database file, complete." << '\n';
    } else if (mapped_writable_instance) {
       // we are saving while processing... recreate the copy_on_write mapping with clean pages.
+      // --------------------------------------------------------------------------------------
+      _file_mapped_region = bip::mapped_region(); // first clear old region so we don't overcommit
       _file_mapped_region = bip::mapped_region(_file_mapping, bip::copy_on_write);
       *((char*)_file_mapped_region.get_address()+header_dirty_bit_offset) = dirty; // set dirty bit in our memory mapping
       _segment_manager = reinterpret_cast<segment_manager*>((char*)_file_mapped_region.get_address()+header_size);
