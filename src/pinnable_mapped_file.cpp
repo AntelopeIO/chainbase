@@ -428,6 +428,7 @@ size_t pinnable_mapped_file::save_database_file(bool flush, bool closing_db) {
    if (closing_db) {
       std::cerr << "CHAINBASE: Writing \"" << _database_name << "\" database file, complete." << '\n';
    } else if (mapped_writable_instance) {
+#ifndef _WIN32
       // we are saving while processing... recreate the copy_on_write mapping with clean pages.
       // --------------------------------------------------------------------------------------
       void* old_addr = _cow_mapping;
@@ -437,7 +438,7 @@ size_t pinnable_mapped_file::save_database_file(bool flush, bool closing_db) {
       if (_cow_mapping != old_addr)
          BOOST_THROW_EXCEPTION(std::system_error(make_error_code(db_error_code::mmap_address_match_failed)));
       assert(*((char*)_cow_mapping + header_dirty_bit_offset) == dirty); 
-      
+#endif
    }
    return written_pages;
 }
