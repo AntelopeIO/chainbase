@@ -265,7 +265,7 @@ void pinnable_mapped_file::revert_to_private_mode() {
 }
 
 // returns the number of pages flushed to disk
-std::optional<std::pair<size_t, size_t>> pinnable_mapped_file::check_memory_and_flush_if_needed() {
+   std::optional<pinnable_mapped_file::memory_check_result> pinnable_mapped_file::check_memory_and_flush_if_needed() {
    size_t written_pages {0};
    if (_non_file_mapped_mapping || _sharable || !_writable)
       return {};
@@ -294,7 +294,7 @@ std::optional<std::pair<size_t, size_t>> pinnable_mapped_file::check_memory_and_
             if (!pagemap_accessor::clear_refs())
                BOOST_THROW_EXCEPTION(std::system_error(make_error_code(db_error_code::clear_refs_failed)));
          } 
-         return std::make_pair(*oom_score, written_pages);
+         return memory_check_result{*oom_score, *pagemap_accessor::read_oom_score(), written_pages};
       }
    }
    return {};

@@ -52,6 +52,12 @@ class pinnable_mapped_file {
          locked         // file is copied at startup to an anonymous mapping using huge pages (if available) and locked in memory
       };
 
+      struct memory_check_result {
+         int    oom_score_before;
+         int    oom_score_after;
+         size_t num_pages_written;
+      };
+
       pinnable_mapped_file(const std::filesystem::path& dir, bool writable, uint64_t shared_file_size, bool allow_dirty, map_mode mode);
       pinnable_mapped_file(pinnable_mapped_file&& o) noexcept ;
       pinnable_mapped_file& operator=(pinnable_mapped_file&&) noexcept ;
@@ -61,7 +67,7 @@ class pinnable_mapped_file {
 
       segment_manager* get_segment_manager() const { return _segment_manager;}
       void             revert_to_private_mode();
-      std::optional<std::pair<size_t, size_t>> check_memory_and_flush_if_needed();
+      std::optional<memory_check_result> check_memory_and_flush_if_needed();
 
 
    private:
