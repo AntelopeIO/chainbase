@@ -279,6 +279,7 @@ void pinnable_mapped_file::revert_to_private_mode() {
       check_time = current_time + check_interval;
 
       auto oom_score = pagemap_accessor::read_oom_score();
+      std::optional<int> oom_post;
       if (oom_score) {
          if (*oom_score >= 980) {
             // linux returned a high out-of-memory (oom) score for the current process, indicating a high 
@@ -293,8 +294,9 @@ void pinnable_mapped_file::revert_to_private_mode() {
                written_pages += pmm->save_database_file(true, false); // update disk file - with flush
             if (!pagemap_accessor::clear_refs())
                BOOST_THROW_EXCEPTION(std::system_error(make_error_code(db_error_code::clear_refs_failed)));
-         } 
-         return memory_check_result{*oom_score, *pagemap_accessor::read_oom_score(), written_pages};
+            oom_post = pagemap_accessor::read_oom_score();
+         }
+         return memory_check_result{*oom_score, oom_post ? *oom_post : -1, written_pages};
       }
    }
    return {};
