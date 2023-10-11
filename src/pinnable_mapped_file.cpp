@@ -437,7 +437,6 @@ size_t pinnable_mapped_file::save_database_file(bool flush, bool closing_db) {
       // we are saving while processing... recreate the copy_on_write mapping with clean pages.
       // --------------------------------------------------------------------------------------
       void* old_address = _cow_address;
-      munmap(_cow_address, _database_size);  // first clear old region so we don't overcommit
       _cow_address = mmap(_cow_address, _database_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_FIXED,
                           _file_mapping.get_mapping_handle().handle, 0);
       if (_cow_address != old_address)
