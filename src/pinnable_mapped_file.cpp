@@ -264,24 +264,29 @@ void pinnable_mapped_file::revert_to_private_mode() {
    }
 }
 
-// returns the number of pages flushed to disk
-   std::optional<pinnable_mapped_file::memory_check_result> pinnable_mapped_file::check_memory_and_flush_if_needed() {
+std::optional<int> pinnable_mapped_file::get_oom_score() const {
+   return pagemap_accessor::read_oom_score();
+}
+
+// Will check the oom score at 30 second intervals at most.
+// When the check is done, return a struct including the number of pages flushed to disk and pre/post oom scores
+// -------------------------------------------------------------------------------------------------------------
+std::optional<pinnable_mapped_file::memory_check_result> pinnable_mapped_file::check_memory_and_flush_if_needed() {
    size_t written_pages {0};
    if (_non_file_mapped_mapping || _sharable || !_writable)
       return {};
 
    // we are in `copy_on_write` mode.
    static time_t check_time = 0;
-   constexpr int check_interval = 30; // seconds
 
    const time_t current_time = time(NULL);
    if(current_time >= check_time) {
-      check_time = current_time + check_interval;
+      check_time = current_time + _oom_delay;
 
       auto oom_score = pagemap_accessor::read_oom_score();
       std::optional<int> oom_post;
       if (oom_score) {
-         if (*oom_score >= 980) {
+         if (*oom_score >= _oom_threshold) {
             // linux returned a high out-of-memory (oom) score for the current process, indicating a high 
             // probablility that the process will be killed soon (The valid range is from 0 to 1000.
             // The higher the value is, the higher the probability is that the process will be killed).

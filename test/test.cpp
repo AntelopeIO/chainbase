@@ -127,4 +127,35 @@ BOOST_AUTO_TEST_CASE( open_and_create ) {
    BOOST_REQUIRE_EQUAL( new_book.b, copy_new_book.b );
 }
 
+BOOST_AUTO_TEST_CASE( oom_flush_dirty_pages ) {
+   temp_directory temp_dir;
+   const auto& temp = temp_dir.path();
+   std::cerr << temp << " \n";
+
+   constexpr size_t db_size = 4ull << 30; // 4GB
+   constexpr size_t max_elems = db_size / (sizeof(book) + 16 + 4);
+   chainbase::database db(temp, database::read_write, db_size, false, pinnable_mapped_file::map_mode::mapped_private);
+   db.add_index< book_index >();
+
+   auto& pmf = db.get_pinnable_mapped_file();
+   pmf.set_oom_threshold(100); // set a low threshold so that we hit it with a 4GB file
+   pmf.set_oom_delay(1);
+
+   size_t flush_count = 0;
+   for (int i=0; i<max_elems; ++i) {
+      db.create<book>( [i]( book& b ) { b.a = i; b.b = i+1; } );
+      if (i % 1000 == 0) {
+         if (auto res = db.check_memory_and_flush_if_needed()) {
+            std::cerr << "oom score: " << res->oom_score_before << '\n';
+            if (res->num_pages_written > 0) {
+               std::cerr << "Flushed " << res->num_pages_written << " pages to disk\n";
+               if (++flush_count == 4)
+                  break;
+            }
+         }
+      }
+   }
+   BOOST_REQUIRE( flush_count == 4 ); 
+}
+
 // BOOST_AUTO_TEST_SUITE_END()
