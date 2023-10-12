@@ -142,8 +142,8 @@ BOOST_AUTO_TEST_CASE( oom_flush_dirty_pages ) {
    pmf.set_oom_delay(1);
 
    size_t flush_count = 0;
-   for (int i=0; i<max_elems; ++i) {
-      db.create<book>( [i]( book& b ) { b.a = i; b.b = i+1; } );
+   for (size_t i=0; i<max_elems; ++i) {
+      db.create<book>( [i]( book& b ) { b.a = (int)i; b.b = (int)(i+1); } );
       if (i % 1000 == 0) {
          if (auto res = db.check_memory_and_flush_if_needed()) {
             std::cerr << "oom score: " << res->oom_score_before << '\n';
