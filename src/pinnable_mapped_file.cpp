@@ -272,7 +272,6 @@ std::optional<int> pinnable_mapped_file::get_oom_score() const {
 // When the check is done, return a struct including the number of pages flushed to disk and pre/post oom scores
 // -------------------------------------------------------------------------------------------------------------
 std::optional<pinnable_mapped_file::memory_check_result> pinnable_mapped_file::check_memory_and_flush_if_needed() {
-   size_t written_pages {0};
    if (_non_file_mapped_mapping || _sharable || !_writable)
       return {};
 
@@ -284,8 +283,10 @@ std::optional<pinnable_mapped_file::memory_check_result> pinnable_mapped_file::c
       check_time = current_time + _oom_delay;
 
       auto oom_score = pagemap_accessor::read_oom_score();
-      std::optional<int> oom_post;
       if (oom_score) {
+         size_t written_pages {0};
+         std::optional<int> oom_post;
+         
          if (*oom_score >= _oom_threshold) {
             // linux returned a high out-of-memory (oom) score for the current process, indicating a high 
             // probablility that the process will be killed soon (The valid range is from 0 to 1000.
@@ -403,13 +404,13 @@ size_t pinnable_mapped_file::save_database_file(bool flush, bool closing_db) {
    pagemap_accessor pagemap;
    size_t written_pages {0};
    auto [src, sz] = get_region_to_save();
-   bool mapped_writable_instance = std::find(_instance_tracker.begin(), _instance_tracker.end(), this) != _instance_tracker.end();
+   bool cow_instance = std::find(_instance_tracker.begin(), _instance_tracker.end(), this) != _instance_tracker.end();
    
    while(offset != sz) {
       size_t copy_size = std::min(_db_size_copy_increment,  sz - offset);
-      if (!mapped_writable_instance ||
+      if (!cow_instance ||
           !pagemap.update_file_from_region({ src + offset, copy_size }, _file_mapping, offset, flush, written_pages)) {
-         if (mapped_writable_instance)
+         if (cow_instance)
             std::cerr << "CHAINBASE: ERROR: pagemap update of db file failed... using non-pagemap version" << '\n';
          if(!all_zeros(src+offset, copy_size)) {
             bip::mapped_region dst_rgn(_file_mapping, bip::read_write, offset, copy_size);
@@ -432,7 +433,7 @@ size_t pinnable_mapped_file::save_database_file(bool flush, bool closing_db) {
    }
    if (closing_db) {
       std::cerr << "CHAINBASE: Writing \"" << _database_name << "\" database file, complete." << '\n';
-   } else if (mapped_writable_instance) {
+   } else if (cow_instance) {
 #ifndef _WIN32
       // we are saving while processing... recreate the copy_on_write mapping with clean pages.
       // --------------------------------------------------------------------------------------
