@@ -146,11 +146,11 @@ BOOST_AUTO_TEST_CASE( oom_flush_dirty_pages ) {
    for (size_t i=0; i<max_elems; ++i) {
       db.create<book>( [i]( book& b ) { b.a = (int)i; b.b = (int)(i+1); } );
       if (i % 1000 == 0) {
+         // we need to wait some time after clearing the soft-dirty bits from the task's PTEs
+         // for the next read to be accurate (see https://www.kernel.org/doc/Documentation/vm/soft-dirty.txt)
+         std::this_thread::sleep_for (std::chrono::milliseconds(2000));
+
          if (auto res = db.check_memory_and_flush_if_needed()) {
-            // we need to wait some time after clearing the soft-dirty bits from the task's PTEs
-            // for the next read to be accurate (see https://www.kernel.org/doc/Documentation/vm/soft-dirty.txt)
-            std::this_thread::sleep_for (std::chrono::milliseconds(2000));
-            
             std::cerr << "oom score: " << res->oom_score_before << '\n';
             if (res->num_pages_written > 0) {
                std::cerr << "Flushed " << res->num_pages_written << " pages to disk\n";
@@ -159,8 +159,14 @@ BOOST_AUTO_TEST_CASE( oom_flush_dirty_pages ) {
             }
          }
       }
+      std::cerr << "index size: " << db.get_index<get_index_type<book>::type>().size() << '\n';
+      BOOST_REQUIRE(db.get_index<get_index_type<book>::type>().size() == i+1);
+      const auto& last_inserted_book = db.get( book::id_type(i) );
+      BOOST_REQUIRE_EQUAL( last_inserted_book.a, (int)i );
+      BOOST_REQUIRE_EQUAL( last_inserted_book.b, (int)(i+1) );
+
    }
-   BOOST_REQUIRE( flush_count == 6 ); 
+   BOOST_REQUIRE(flush_count == 6); 
 }
 
 // BOOST_AUTO_TEST_SUITE_END()
