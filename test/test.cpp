@@ -158,6 +158,14 @@ BOOST_AUTO_TEST_CASE( oom_flush_dirty_pages ) {
                   break;
             }
          }
+
+         // check that we still have all previously created items
+         for (size_t k=0; k<i; ++k) {
+            const auto& book = db.get( book::id_type(k) );
+            BOOST_REQUIRE_EQUAL( book.a, (int)k );
+            BOOST_REQUIRE_EQUAL( book.b, (int)(k+1) );
+         }
+         
       }
       std::cerr << "index size: " << db.get_index<get_index_type<book>::type>().size() << '\n';
       BOOST_REQUIRE(db.get_index<get_index_type<book>::type>().size() == i+1);
