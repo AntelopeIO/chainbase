@@ -163,7 +163,7 @@ BOOST_AUTO_TEST_CASE( oom_flush_dirty_pages ) {
          }
          
       }
-      std::cerr << "index size: " << db.get_index<get_index_type<book>::type>().size() << '\n';
+      BOOST_REQUIRE_EQUAL( db.get_index<get_index_type<book>::type>().size(), i+1);
       BOOST_REQUIRE(db.get_index<get_index_type<book>::type>().size() == i+1);
       const auto& last_inserted_book = db.get( book::id_type(i) );
       BOOST_REQUIRE_EQUAL( last_inserted_book.a, (int)i );
