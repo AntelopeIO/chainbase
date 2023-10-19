@@ -140,16 +140,12 @@ BOOST_AUTO_TEST_CASE( oom_flush_dirty_pages ) {
 
    auto& pmf = db.get_pinnable_mapped_file();
    pmf.set_oom_threshold(100); // set a low threshold so that we hit it with a 4GB file
-   pmf.set_oom_delay(1);
+   pmf.set_oom_delay(0);
 
    size_t flush_count = 0;
    for (size_t i=0; i<max_elems; ++i) {
       db.create<book>( [i]( book& b ) { b.a = (int)i; b.b = (int)(i+1); } );
       if (i % 1000 == 0) {
-         // we need to wait some time after clearing the soft-dirty bits from the task's PTEs
-         // for the next read to be accurate (see https://www.kernel.org/doc/Documentation/vm/soft-dirty.txt)
-         std::this_thread::sleep_for (std::chrono::milliseconds(2000));
-
          if (auto res = db.check_memory_and_flush_if_needed()) {
             std::cerr << "oom score: " << res->oom_score_before << '\n';
             if (res->num_pages_written > 0) {
