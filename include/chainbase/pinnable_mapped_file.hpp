@@ -66,12 +66,11 @@ class pinnable_mapped_file {
       ~pinnable_mapped_file();
 
       segment_manager* get_segment_manager() const { return _segment_manager;}
-      void             revert_to_private_mode();
+  
       void             set_oom_threshold(int threshold) { _oom_threshold = threshold; }
       void             set_oom_delay(int seconds)       { _oom_delay = seconds; }
       std::optional<int> get_oom_score() const;
       std::optional<memory_check_result> check_memory_and_flush_if_needed();
-
 
    private:
       void                                          set_mapped_file_db_dirty(bool);

@@ -524,10 +524,6 @@ namespace chainbase {
             _read_only_mode = false;
          }
 
-         void revert_to_private_mode() {
-            _db_file.revert_to_private_mode();
-         }
-
          std::optional<pinnable_mapped_file::memory_check_result> check_memory_and_flush_if_needed() {
             return _db_file.check_memory_and_flush_if_needed();
          }
