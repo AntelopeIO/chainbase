@@ -153,6 +153,9 @@ BOOST_AUTO_TEST_CASE( oom_flush_dirty_pages ) {
                if (++flush_count == 6)
                   break;
             }
+         } else if (!pmf.get_oom_score()) {
+            // oom score not supported on this system - break out of the loop.
+            break;
          }
 
          // check that we still have all previously created items
@@ -170,7 +173,7 @@ BOOST_AUTO_TEST_CASE( oom_flush_dirty_pages ) {
       BOOST_REQUIRE_EQUAL( last_inserted_book.b, (int)(i+1) );
 
    }
-   BOOST_REQUIRE(flush_count == 6); 
+   BOOST_REQUIRE(flush_count == 6 || !pmf.get_oom_score()); 
 }
 
 // BOOST_AUTO_TEST_SUITE_END()
