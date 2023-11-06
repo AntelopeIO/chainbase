@@ -136,9 +136,10 @@ pinnable_mapped_file::pinnable_mapped_file(const std::filesystem::path& dir, boo
             std::filesystem::resize_file(_data_file_path, shared_file_size);
          }
          else if(shared_file_size < existing_file_size) {
-             std::cerr << "CHAINBASE: \"" << _database_name << "\" requested size of " << shared_file_size << " is less than "
-                "existing size of " << existing_file_size << ". This database will not be shrunk and will "
-                "remain at " << existing_file_size << '\n';
+            _database_size = existing_file_size;
+            std::cerr << "CHAINBASE: \"" << _database_name << "\" requested size of " << shared_file_size << " is less than "
+               "existing size of " << existing_file_size << ". This database will not be shrunk and will "
+               "remain at " << existing_file_size << '\n';
          }
          _file_mapping = bip::file_mapping(_data_file_path.generic_string().c_str(), bip::read_write);
          _file_mapped_region = bip::mapped_region(_file_mapping, bip::read_write);
