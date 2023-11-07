@@ -233,6 +233,8 @@ void pinnable_mapped_file::setup_copy_on_write_mapping() {
       pmm->save_database_file(true, false);
 
    _cow_address = mmap(NULL, _database_size, PROT_READ | PROT_WRITE, MAP_PRIVATE, _file_mapping.get_mapping_handle().handle, 0);
+   if (_cow_address == MAP_FAILED)
+      BOOST_THROW_EXCEPTION(std::runtime_error(std::string("Failed to map database ") + _database_name + ": " + strerror(errno)));
    *((char*)_cow_address + header_dirty_bit_offset) = dirty; // set dirty bit in our memory mapping
    _segment_manager = reinterpret_cast<segment_manager*>((char*)_cow_address + header_size);
 
