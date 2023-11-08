@@ -391,6 +391,10 @@ namespace chainbase {
             return _db_file.get_segment_manager();
          }
 
+         pinnable_mapped_file& get_pinnable_mapped_file() {
+            return _db_file;
+         }
+
          size_t get_free_memory()const
          {
             return _db_file.get_segment_manager()->get_free_memory();
@@ -520,7 +524,7 @@ namespace chainbase {
             _read_only_mode = false;
          }
 
-         size_t check_memory_and_flush_if_needed() {
+         std::optional<pinnable_mapped_file::memory_check_result> check_memory_and_flush_if_needed() {
             return _db_file.check_memory_and_flush_if_needed();
          }
 

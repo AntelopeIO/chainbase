@@ -5,6 +5,7 @@
 #include <boost/interprocess/sync/file_lock.hpp>
 #include <boost/asio/io_service.hpp>
 #include <filesystem>
+#include <optional>
 #include <vector>
 
 namespace chainbase {
@@ -24,7 +25,8 @@ enum db_error_code {
    aborted,
    no_mlock,
    clear_refs_failed,
-   tempfs_incompatible_mode
+   tempfs_incompatible_mode,
+   mmap_address_match_failed
 };
 
 const std::error_category& chainbase_error_category();
@@ -50,6 +52,12 @@ class pinnable_mapped_file {
          locked         // file is copied at startup to an anonymous mapping using huge pages (if available) and locked in memory
       };
 
+      struct memory_check_result {
+         int    oom_score_before;
+         int    oom_score_after;
+         size_t num_pages_written;
+      };
+
       pinnable_mapped_file(const std::filesystem::path& dir, bool writable, uint64_t shared_file_size, bool allow_dirty, map_mode mode);
       pinnable_mapped_file(pinnable_mapped_file&& o) noexcept ;
       pinnable_mapped_file& operator=(pinnable_mapped_file&&) noexcept ;
@@ -58,13 +66,16 @@ class pinnable_mapped_file {
       ~pinnable_mapped_file();
 
       segment_manager* get_segment_manager() const { return _segment_manager;}
-      size_t           check_memory_and_flush_if_needed();
-
+  
+      void             set_oom_threshold(int threshold) { _oom_threshold = threshold; }
+      void             set_oom_delay(int seconds)       { _oom_delay = seconds; }
+      std::optional<int> get_oom_score() const;
+      std::optional<memory_check_result> check_memory_and_flush_if_needed();
 
    private:
       void                                          set_mapped_file_db_dirty(bool);
       void                                          load_database_file(boost::asio::io_service& sig_ios);
-      void                                          save_database_file(bool flush = true);
+      size_t                                        save_database_file(bool flush, bool closing_db);
       static bool                                   all_zeros(const std::byte* data, size_t sz);
       void                                          setup_non_file_mapping();
       void                                          setup_copy_on_write_mapping();
@@ -79,6 +90,7 @@ class pinnable_mapped_file {
 
       bip::file_mapping                             _file_mapping;
       bip::mapped_region                            _file_mapped_region;
+      void*                                         _cow_address = nullptr;
       void*                                         _non_file_mapped_mapping = nullptr;
       size_t                                        _non_file_mapped_mapping_size = 0;
 
@@ -89,6 +101,8 @@ class pinnable_mapped_file {
 #endif
 
       segment_manager*                              _segment_manager = nullptr;
+      int                                           _oom_threshold = 980; // for mapped_private mode, flush mapped pages when oon_score > threshold
+      int                                           _oom_delay = 30;      // minimum delay in seconds between threshold checks
 
       static std::vector<pinnable_mapped_file*>     _instance_tracker;
 

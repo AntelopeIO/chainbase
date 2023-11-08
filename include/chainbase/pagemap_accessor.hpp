@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <vector>
 #include <span>
+#include <optional>
 #include <boost/interprocess/managed_mapped_file.hpp>
 
 namespace chainbase {
@@ -21,7 +22,7 @@ public:
       _close();
    }
 
-   bool clear_refs() const {
+   static bool clear_refs() {
       if constexpr (!_pagemap_supported)
          return false;
       
@@ -41,6 +42,22 @@ public:
       return res;
    }
    
+   static std::optional<int> read_oom_score() {
+      if constexpr (!_pagemap_supported)
+         return {};
+      
+      std::ifstream oom_score_file("/proc/self/oom_score");
+
+      if (!oom_score_file.is_open())
+         return {};
+
+      int oom_score;
+      if (!(oom_score_file >> oom_score))
+         return {};
+
+      return oom_score;
+   }
+      
    static constexpr bool pagemap_supported() {
       return _pagemap_supported;
    }
