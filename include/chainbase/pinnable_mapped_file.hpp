@@ -56,7 +56,7 @@ class pinnable_mapped_file {
          locked         // file is copied at startup to an anonymous mapping using huge pages (if available) and locked in memory
       };
 
-      pinnable_mapped_file(const std::filesystem::path& dir, bool writable, uint64_t shared_file_size, bool allow_dirty, map_mode mode);
+      pinnable_mapped_file(const std::filesystem::path& path, bool writable, uint64_t shared_file_size, bool allow_dirty, map_mode mode);
       pinnable_mapped_file(pinnable_mapped_file&& o) noexcept ;
       pinnable_mapped_file& operator=(pinnable_mapped_file&&) noexcept ;
       pinnable_mapped_file(const pinnable_mapped_file&) = delete;
@@ -94,7 +94,6 @@ class pinnable_mapped_file {
 
       bip::file_lock                                _mapped_file_lock;
       std::filesystem::path                         _data_file_path;
-      std::string                                   _database_name;
       size_t                                        _database_size;
       bool                                          _writable;
       bool                                          _sharable;

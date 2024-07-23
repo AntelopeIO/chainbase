@@ -78,9 +78,8 @@ static bool on_tempfs_filesystem(std::filesystem::path& path) {
    return false;
 }
 
-pinnable_mapped_file::pinnable_mapped_file(const std::filesystem::path& dir, bool writable, uint64_t shared_file_size, bool allow_dirty, map_mode mode) :
-   _data_file_path(std::filesystem::absolute(dir/"shared_memory.bin")),
-   _database_name(dir.filename().string()),
+pinnable_mapped_file::pinnable_mapped_file(const std::filesystem::path& path, bool writable, uint64_t shared_file_size, bool allow_dirty, map_mode mode) :
+   _data_file_path(std::filesystem::absolute(path)),
    _database_size(shared_file_size),
    _writable(writable),
    _sharable(mode == mapped)
@@ -98,7 +97,7 @@ pinnable_mapped_file::pinnable_mapped_file(const std::filesystem::path& dir, boo
       BOOST_THROW_EXCEPTION(std::system_error(make_error_code(db_error_code::not_found), what_str));
    }
 
-   std::filesystem::create_directories(dir);
+   std::filesystem::create_directories(_data_file_path.parent_path());
 
    if(std::filesystem::exists(_data_file_path)) {
       char header[header_size];
@@ -109,15 +108,15 @@ pinnable_mapped_file::pinnable_mapped_file(const std::filesystem::path& dir, boo
 
       db_header* dbheader = reinterpret_cast<db_header*>(header);
       if(dbheader->id != header_id) {
-         std::string what_str("\"" + _database_name + "\" database format not compatible with this version of chainbase.");
+         std::string what_str("chainbase database format not compatible with this version of chainbase.");
          BOOST_THROW_EXCEPTION(std::system_error(make_error_code(db_error_code::incorrect_db_version), what_str));
       }
       if(!allow_dirty && dbheader->dirty) {
-         std::string what_str("\"" + _database_name + "\" database dirty flag set");
+         std::string what_str("chainbase database dirty flag set");
          BOOST_THROW_EXCEPTION(std::system_error(make_error_code(db_error_code::dirty)));
       }
       if(dbheader->dbenviron != environment()) {
-         std::cerr << "CHAINBASE: \"" << _database_name << "\" database was created with a chainbase from a different environment" << '\n';
+         std::cerr << "CHAINBASE: database was created with a chainbase from a different environment" << '\n';
          std::cerr << "Current compiler environment:" << '\n';
          std::cerr << environment();
          std::cerr << "DB created with compiler environment:" << '\n';
@@ -145,7 +144,7 @@ pinnable_mapped_file::pinnable_mapped_file(const std::filesystem::path& dir, boo
          }
          else if(shared_file_size < existing_file_size) {
             _database_size = existing_file_size;
-            std::cerr << "CHAINBASE: \"" << _database_name << "\" requested size of " << shared_file_size << " is less than "
+            std::cerr << "CHAINBASE: requested size of " << shared_file_size << " is less than "
                 "existing size of " << existing_file_size << ". This database will not be shrunk and will "
                 "remain at " << existing_file_size << '\n';
          }
@@ -164,7 +163,7 @@ pinnable_mapped_file::pinnable_mapped_file(const std::filesystem::path& dir, boo
    if(_writable) {
       //remove meta file created in earlier versions
       std::error_code ec;
-      std::filesystem::remove(std::filesystem::absolute(dir/"shared_memory.meta"), ec);
+      std::filesystem::remove(std::filesystem::absolute(_data_file_path.parent_path()/"shared_memory.meta"), ec);
 
       _mapped_file_lock = bip::file_lock(_data_file_path.generic_string().c_str());
       if(!_mapped_file_lock.try_lock())
@@ -240,10 +239,10 @@ pinnable_mapped_file::pinnable_mapped_file(const std::filesystem::path& dir, boo
             }
             details += "Run \"ulimit -l\" to increase locked memory limit.";
 
-            std::string what_str("Failed to mlock database \"" + _database_name + "\". " + details);
+            std::string what_str("Failed to mlock database. " + details);
             BOOST_THROW_EXCEPTION(std::system_error(make_error_code(db_error_code::no_mlock), what_str));
          }
-         std::cerr << "CHAINBASE: Database \"" << _database_name << "\" has been successfully locked in memory" << '\n';
+         std::cerr << "CHAINBASE: Database has been successfully locked in memory" << '\n';
       }
 #endif
 
@@ -325,7 +324,7 @@ void pinnable_mapped_file::setup_non_file_mapping() {
    _non_file_mapped_mapping = mmap(NULL, _non_file_mapped_mapping_size, PROT_READ|PROT_WRITE, common_map_opts|MAP_HUGETLB|MAP_HUGE_1GB, -1, 0);
    if(_non_file_mapped_mapping != MAP_FAILED) {
       round_up_mmaped_size(_1gb);
-      std::cerr << "CHAINBASE: Database \"" << _database_name << "\" using 1GB pages" << '\n';
+      std::cerr << "CHAINBASE: Database using 1GB pages" << '\n';
       return;
    }
 #endif
@@ -336,7 +335,7 @@ void pinnable_mapped_file::setup_non_file_mapping() {
    _non_file_mapped_mapping = mmap(NULL, _non_file_mapped_mapping_size, PROT_READ|PROT_WRITE, common_map_opts|MAP_HUGETLB|MAP_HUGE_2MB, -1, 0);
    if(_non_file_mapped_mapping != MAP_FAILED) {
       round_up_mmaped_size(_2mb);
-      std::cerr << "CHAINBASE: Database \"" << _database_name << "\" using 2MB pages" << '\n';
+      std::cerr << "CHAINBASE: Database using 2MB pages" << '\n';
       return;
    }
 #endif
@@ -354,12 +353,12 @@ void pinnable_mapped_file::setup_non_file_mapping() {
 #ifndef _WIN32
    _non_file_mapped_mapping = mmap(NULL, _non_file_mapped_mapping_size, PROT_READ|PROT_WRITE, common_map_opts, -1, 0);
    if(_non_file_mapped_mapping == MAP_FAILED)
-      BOOST_THROW_EXCEPTION(std::runtime_error(std::string("Failed to map database ") + _database_name + ": " + strerror(errno)));
+      BOOST_THROW_EXCEPTION(std::runtime_error(std::string("Failed to map database: ") + strerror(errno)));
 #endif
 }
 
 void pinnable_mapped_file::load_database_file(boost::asio::io_service& sig_ios) {
-   std::cerr << "CHAINBASE: Preloading \"" << _database_name << "\" database file, this could take a moment..." << '\n';
+   std::cerr << "CHAINBASE: Preloading database file, this could take a moment..." << '\n';
    char* const dst = (char*)_non_file_mapped_mapping;
    size_t offset = 0;
    time_t t = time(nullptr);
@@ -371,12 +370,12 @@ void pinnable_mapped_file::load_database_file(boost::asio::io_service& sig_ios) 
 
       if(time(nullptr) != t) {
          t = time(nullptr);
-         std::cerr << "CHAINBASE: Preloading \"" << _database_name << "\" database file, " <<
+         std::cerr << "CHAINBASE: Preloading database file, " <<
             offset/(_database_size/100) << "% complete..." << '\n';
       }
       sig_ios.poll();
    }
-   std::cerr << "CHAINBASE: Preloading \"" << _database_name << "\" database file, complete." << '\n';
+   std::cerr << "CHAINBASE: Preloading database file, complete." << '\n';
 }
 
 bool pinnable_mapped_file::all_zeros(const std::byte* data, size_t sz) {
@@ -397,7 +396,7 @@ std::pair<std::byte*, size_t> pinnable_mapped_file::get_region_to_save() const {
 
 void pinnable_mapped_file::save_database_file(bool flush /* = true */) {
    assert(_writable);
-   std::cerr << "CHAINBASE: Writing \"" << _database_name << "\" database file, this could take a moment..." << '\n';
+   std::cerr << "CHAINBASE: Writing database file, this could take a moment..." << '\n';
    size_t offset = 0;
    time_t t = time(nullptr);
    pagemap_accessor pagemap;
@@ -426,17 +425,16 @@ void pinnable_mapped_file::save_database_file(bool flush /* = true */) {
 
       if(time(nullptr) != t) {
          t = time(nullptr);
-         std::cerr << "CHAINBASE: Writing \"" << _database_name << "\" database file, " <<
+         std::cerr << "CHAINBASE: Writing database file, " <<
             offset/(sz/100) << "% complete..." << '\n';
       }
    }
-   std::cerr << "CHAINBASE: Writing \"" << _database_name << "\" database file, complete." << '\n';
+   std::cerr << "CHAINBASE: Writing database file, complete." << '\n';
 }
 
 pinnable_mapped_file::pinnable_mapped_file(pinnable_mapped_file&& o)  noexcept :
    _mapped_file_lock(std::move(o._mapped_file_lock)),
    _data_file_path(std::move(o._data_file_path)),
-   _database_name(std::move(o._database_name)),
    _file_mapped_region(std::move(o._file_mapped_region))
 {
    _segment_manager = o._segment_manager;
@@ -450,7 +448,6 @@ pinnable_mapped_file::pinnable_mapped_file(pinnable_mapped_file&& o)  noexcept :
 pinnable_mapped_file& pinnable_mapped_file::operator=(pinnable_mapped_file&& o) noexcept {
    _mapped_file_lock = std::move(o._mapped_file_lock);
    _data_file_path = std::move(o._data_file_path);
-   _database_name = std::move(o._database_name);
    _file_mapped_region = std::move(o._file_mapped_region);
    _non_file_mapped_mapping = o._non_file_mapped_mapping;
    o._non_file_mapped_mapping = nullptr;
