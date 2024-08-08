@@ -448,20 +448,21 @@ pinnable_mapped_file::pinnable_mapped_file(pinnable_mapped_file&& o)  noexcept :
 }
 
 pinnable_mapped_file& pinnable_mapped_file::operator=(pinnable_mapped_file&& o) noexcept {
+   std::swap(_segment_manager, o._segment_manager); // and don't do anything else with `_segment_manager`
    _mapped_file_lock = std::move(o._mapped_file_lock);
    _data_file_path = std::move(o._data_file_path);
    _database_name = std::move(o._database_name);
    _file_mapped_region = std::move(o._file_mapped_region);
    _non_file_mapped_mapping = o._non_file_mapped_mapping;
    o._non_file_mapped_mapping = nullptr;
-   _segment_manager = o._segment_manager;
    _writable = o._writable;
    o._writable = false; //prevent dtor from doing anything interesting
-   o._segment_manager = nullptr;
    return *this;
 }
 
 pinnable_mapped_file::~pinnable_mapped_file() {
+   if (_segment_manager)
+      _segment_manager_map.erase(_segment_manager);
    if(_writable) {
       if(_non_file_mapped_mapping) { //in heap or locked mode
          save_database_file();
@@ -483,8 +484,6 @@ pinnable_mapped_file::~pinnable_mapped_file() {
       }
       set_mapped_file_db_dirty(false);
    }
-   if (_segment_manager)
-      _segment_manager_map.erase(_segment_manager);
 }
 
 void pinnable_mapped_file::set_mapped_file_db_dirty(bool dirty) {
