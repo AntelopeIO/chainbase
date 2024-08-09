@@ -58,10 +58,13 @@ class pinnable_mapped_file {
       };
 
       pinnable_mapped_file(const std::filesystem::path& dir, bool writable, uint64_t shared_file_size, bool allow_dirty, map_mode mode);
-      pinnable_mapped_file(pinnable_mapped_file&& o) noexcept ;
-      pinnable_mapped_file& operator=(pinnable_mapped_file&&) noexcept ;
+
+      pinnable_mapped_file(pinnable_mapped_file&& o) ;
+      pinnable_mapped_file& operator=(pinnable_mapped_file&&) ;
+
       pinnable_mapped_file(const pinnable_mapped_file&) = delete;
       pinnable_mapped_file& operator=(const pinnable_mapped_file&) = delete;
+
       ~pinnable_mapped_file();
 
       segment_manager* get_segment_manager() const { return _segment_manager;}
@@ -96,9 +99,9 @@ class pinnable_mapped_file {
       bip::file_lock                                _mapped_file_lock;
       std::filesystem::path                         _data_file_path;
       std::string                                   _database_name;
-      size_t                                        _database_size;
-      bool                                          _writable;
-      bool                                          _sharable;
+      size_t                                        _database_size = 0;
+      bool                                          _writable = false;
+      bool                                          _sharable = false;
 
       bip::file_mapping                             _file_mapping;
       bip::mapped_region                            _file_mapped_region;
