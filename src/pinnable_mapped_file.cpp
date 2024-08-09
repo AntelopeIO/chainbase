@@ -465,6 +465,7 @@ pinnable_mapped_file::~pinnable_mapped_file() {
    if (_segment_manager) {
       std::cout << "erasing: " << _segment_manager << '\n';
       _segment_manager_map.erase(_segment_manager);
+      std::cout << "done erasing: " << '\n';
    }
    if(_writable) {
       if(_non_file_mapped_mapping) { //in heap or locked mode
