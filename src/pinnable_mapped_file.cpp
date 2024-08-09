@@ -250,9 +250,12 @@ pinnable_mapped_file::pinnable_mapped_file(const std::filesystem::path& dir, boo
       _segment_manager = reinterpret_cast<segment_manager*>((char*)_non_file_mapped_mapping+header_size);
    }
    std::byte* start = (std::byte*)_segment_manager;
-   std::cout << "setting: " <<  start << " -> " <<  start + _segment_manager->get_size() << '\n';
-   assert(_segment_manager_map.find(start) == _segment_manager_map.end());
-   _segment_manager_map[start] = start + _segment_manager->get_size();
+   {
+      std::lock_guard m(_segment_manager_map_mutex);
+      std::cout << "setting: " <<  start << " -> " <<  start + _segment_manager->get_size() << '\n';
+      assert(_segment_manager_map.find(start) == _segment_manager_map.end());
+      _segment_manager_map[start] = start + _segment_manager->get_size();
+   }
 }
 
 void pinnable_mapped_file::setup_copy_on_write_mapping() {
@@ -463,9 +466,9 @@ pinnable_mapped_file& pinnable_mapped_file::operator=(pinnable_mapped_file&& o) 
 
 pinnable_mapped_file::~pinnable_mapped_file() {
    if (_segment_manager) {
+      std::lock_guard m(_segment_manager_map_mutex);
       std::cout << "erasing: " << _segment_manager << '\n';
       _segment_manager_map.erase(_segment_manager);
-      std::cout << "done erasing: " << '\n';
    }
    if(_writable) {
       if(_non_file_mapped_mapping) { //in heap or locked mode
