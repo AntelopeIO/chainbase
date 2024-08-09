@@ -251,6 +251,7 @@ pinnable_mapped_file::pinnable_mapped_file(const std::filesystem::path& dir, boo
    }
    std::byte* start = (std::byte*)_segment_manager;
    assert(_segment_manager_map.find(start) == _segment_manager_map.end());
+   std::cout << "setting: " <<  start << " -> " <<  start + _segment_manager->get_size() << '\n';
    _segment_manager_map[start] = start + _segment_manager->get_size();
 }
 
@@ -461,8 +462,10 @@ pinnable_mapped_file& pinnable_mapped_file::operator=(pinnable_mapped_file&& o) 
 }
 
 pinnable_mapped_file::~pinnable_mapped_file() {
-   if (_segment_manager)
+   if (_segment_manager) {
+      std::cout << "erasing: " << _segment_manager << '\n';
       _segment_manager_map.erase(_segment_manager);
+   }
    if(_writable) {
       if(_non_file_mapped_mapping) { //in heap or locked mode
          save_database_file();
