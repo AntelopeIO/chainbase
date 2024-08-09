@@ -119,7 +119,6 @@ class pinnable_mapped_file {
       static std::vector<pinnable_mapped_file*>     _instance_tracker;
 
       using segment_manager_map_t = std::map<void*, void *>;
-      std::mutex                                    _segment_manager_map_mutex;
       static segment_manager_map_t                  _segment_manager_map;
 
       constexpr static unsigned                     _db_size_multiple_requirement = 1024*1024; //1MB

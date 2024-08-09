@@ -251,9 +251,9 @@ pinnable_mapped_file::pinnable_mapped_file(const std::filesystem::path& dir, boo
    }
    std::byte* start = (std::byte*)_segment_manager;
    {
-      std::lock_guard m(_segment_manager_map_mutex);
       std::cout << "setting: " <<  start << " -> " <<  start + _segment_manager->get_size() << '\n';
-      assert(_segment_manager_map.find(start) == _segment_manager_map.end());
+      if (start)
+         assert(_segment_manager_map.find(start) == _segment_manager_map.end());
       _segment_manager_map[start] = start + _segment_manager->get_size();
    }
 }
@@ -461,7 +461,6 @@ pinnable_mapped_file& pinnable_mapped_file::operator=(pinnable_mapped_file&& o) 
 
 pinnable_mapped_file::~pinnable_mapped_file() {
    if (_segment_manager) {
-      std::lock_guard m(_segment_manager_map_mutex);
       std::cout << "erasing: " << _segment_manager << '\n';
       _segment_manager_map.erase(_segment_manager);
    }
