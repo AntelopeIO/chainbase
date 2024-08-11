@@ -252,7 +252,7 @@ pinnable_mapped_file::pinnable_mapped_file(const std::filesystem::path& dir, boo
    std::byte* start = (std::byte*)_segment_manager;
    {
       std::cout << "setting: " <<  start << " -> " <<  start + _segment_manager->get_size() << '\n';
-      if (start)
+      if (0 && start)
          assert(_segment_manager_map.find(start) == _segment_manager_map.end());
       _segment_manager_map[start] = start + _segment_manager->get_size();
    }
