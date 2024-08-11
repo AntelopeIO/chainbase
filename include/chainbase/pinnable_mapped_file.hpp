@@ -7,7 +7,6 @@
 #include <boost/container/flat_map.hpp>
 #include <filesystem>
 #include <vector>
-#include <map>
 #include <optional>
 #include <memory>
 
@@ -118,7 +117,7 @@ class pinnable_mapped_file {
 
       static std::vector<pinnable_mapped_file*>     _instance_tracker;
 
-      using segment_manager_map_t = std::map<void*, void *>;
+      using segment_manager_map_t = boost::container::flat_map<void*, void *>;
       static segment_manager_map_t                  _segment_manager_map;
 
       constexpr static unsigned                     _db_size_multiple_requirement = 1024*1024; //1MB
