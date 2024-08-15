@@ -58,8 +58,8 @@ class pinnable_mapped_file {
 
       pinnable_mapped_file(const std::filesystem::path& dir, bool writable, uint64_t shared_file_size, bool allow_dirty, map_mode mode);
 
-      pinnable_mapped_file(pinnable_mapped_file&& o) ;
-      pinnable_mapped_file& operator=(pinnable_mapped_file&&) ;
+      pinnable_mapped_file(pinnable_mapped_file&& o) noexcept ;
+      pinnable_mapped_file& operator=(pinnable_mapped_file&&) noexcept ;
 
       pinnable_mapped_file(const pinnable_mapped_file&) = delete;
       pinnable_mapped_file& operator=(const pinnable_mapped_file&) = delete;
