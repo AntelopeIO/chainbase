@@ -437,13 +437,13 @@ void pinnable_mapped_file::save_database_file(bool flush /* = true */) {
    std::cerr << "CHAINBASE: Writing \"" << _database_name << "\" database file, complete." << '\n';
 }
 
-pinnable_mapped_file::pinnable_mapped_file(pinnable_mapped_file&& o)
+pinnable_mapped_file::pinnable_mapped_file(pinnable_mapped_file&& o) noexcept
 {
+   // all members are correctly default-initialized, so we can just move into *this
    *this = std::move(o);
-   o._writable = false; //prevent dtor from doing anything interesting
 }
 
-pinnable_mapped_file& pinnable_mapped_file::operator=(pinnable_mapped_file&& o) {
+pinnable_mapped_file& pinnable_mapped_file::operator=(pinnable_mapped_file&& o) noexcept {
    std::swap(_mapped_file_lock, o._mapped_file_lock);
    std::swap(_data_file_path, o._data_file_path);
    std::swap(_database_name, o._database_name);
