@@ -94,6 +94,8 @@ if(${CMAKE_SYSTEM_NAME} STREQUAL "FreeBSD")
 endif()
 
 enable_testing()
+find_package(OpenGL REQUIRED)
+add_subdirectory( ${CMAKE_CURRENT_SOURCE_DIR}/deps/glfw )
 add_subdirectory( test )
 add_subdirectory( benchmark )
 
