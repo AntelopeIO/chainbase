@@ -252,6 +252,12 @@ pinnable_mapped_file::pinnable_mapped_file(const std::filesystem::path& dir, boo
    std::byte* start = (std::byte*)_segment_manager;
    assert(_segment_manager_map.find(start) == _segment_manager_map.end());
    _segment_manager_map[start] = start + _segment_manager->get_size();
+
+   // start memory visualization thread if requested
+   // ----------------------------------------------
+   auto mem_vis = getenv("CHAIN_MEMVIS");
+   if (mem_vis && (*mem_vis == '1' || *mem_vis == 'y'))
+      _mem_visualizer.reset(new mem_visualizer(*this, shared_file_size));
 }
 
 void pinnable_mapped_file::setup_copy_on_write_mapping() {

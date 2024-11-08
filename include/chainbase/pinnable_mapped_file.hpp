@@ -10,6 +10,8 @@
 #include <optional>
 #include <memory>
 
+#include <chainbase/mem_visualizer.hpp>
+
 namespace chainbase {
 
 namespace bip = boost::interprocess;
@@ -119,6 +121,8 @@ class pinnable_mapped_file {
 
       constexpr static unsigned                     _db_size_multiple_requirement = 1024*1024; //1MB
       constexpr static size_t                       _db_size_copy_increment       = 1024*1024*1024; //1GB
+
+      std::unique_ptr<mem_visualizer>               _mem_visualizer;
 };
 
 std::istream& operator>>(std::istream& in, pinnable_mapped_file::map_mode& runtime);

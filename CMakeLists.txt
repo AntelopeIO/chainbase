@@ -65,8 +65,9 @@ endif()
 
 
 file(GLOB HEADERS "include/chainbase/*.hpp")
-add_library( chainbase src/chainbase.cpp src/pinnable_mapped_file.cpp ${HEADERS} )
-target_link_libraries( chainbase PUBLIC ${PLATFORM_LIBRARIES} Boost::system )
+add_library( chainbase src/chainbase.cpp src/pinnable_mapped_file.cpp src/mem_visualizer.cpp ${HEADERS} )
+target_include_directories( chainbase PRIVATE deps/glad/include deps/glm)
+target_link_libraries( chainbase PUBLIC ${PLATFORM_LIBRARIES} Boost::system glfw OpenGL::GL )
 
 if(TARGET Boost::asio)
   target_link_libraries( chainbase PUBLIC
