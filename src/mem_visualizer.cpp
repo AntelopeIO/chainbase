@@ -241,7 +241,11 @@ public:
    }
 
    // -------------------------------------------------------------------------
-   ~mem_visualizer_impl() {}
+   ~mem_visualizer_impl() {
+      shutting_down = true;
+      if (work_thread.joinable())
+         work_thread.join();
+   }
 
    // -------------------------------------------------------------------------
    void render() const {
