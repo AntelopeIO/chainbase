@@ -379,23 +379,28 @@ private:
       zoom += -yoffset * zoomSpeed;
       zoom = std::max(1.0f, zoom); // Prevent zooming out
 
-      // figure out how much the point that was under the mouse has moved away because
-      // of the zoom by prohecting it into the model space, applying the zoom, and projecting
-      // it back into screen space again.
-      // ------------------------------------------------------------------------------------
-      auto      inv_mvp = glm::inverse(memv.mvp);
-      glm::vec4 mouse_pos(memv.mouse_pos, 1.0f);
-      mouse_pos = mouse_pos * inv_mvp; // now in model space
+      if (zoom <= 1.0f) {
+         memv.zoom = zoom;
+         memv.translation = glm::vec3{0};
+      } else {
+         // figure out how much the point that was under the mouse has moved away because
+         // of the zoom by prohecting it into the model space, applying the zoom, and projecting
+         // it back into screen space again.
+         // ------------------------------------------------------------------------------------
+         auto      inv_mvp = glm::inverse(memv.mvp);
+         glm::vec4 mouse_pos(memv.mouse_pos, 1.0f);
+         mouse_pos = mouse_pos * inv_mvp; // now in model space
 
-      memv.zoom = zoom;
-      memv.update_mvp();
-      mouse_pos        = mouse_pos * memv.mvp; // back in screen space after updating zoom
-      glm::vec3 offset = glm::vec3(mouse_pos.x, mouse_pos.y, mouse_pos.z) - memv.mouse_pos; // offset in screen space
+         memv.zoom = zoom;
+         memv.update_mvp();
+         mouse_pos        = mouse_pos * memv.mvp; // back in screen space after updating zoom
+         glm::vec3 offset = glm::vec3(mouse_pos.x, mouse_pos.y, mouse_pos.z) - memv.mouse_pos; // offset in screen space
 
-      // now that we figure out how far the point under the mouse has moved away, translate
-      // it back so it stays under the mouse.
-      // ----------------------------------------------------------------------------------
-      memv.translation -= offset / zoom;
+         // now that we figure out how far the point under the mouse has moved away, translate
+         // it back so it stays under the mouse.
+         // ----------------------------------------------------------------------------------
+         memv.translation -= offset / zoom;
+      }
 
       // update mvp again to take translation into account
       // -------------------------------------------------
