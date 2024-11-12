@@ -1,4 +1,5 @@
 #include <chainbase/mem_visualizer.hpp>
+#include <chainbase/pinnable_mapped_file.hpp>
 #include <iostream>
 #include <thread>
 #include <atomic>
@@ -57,7 +58,13 @@ static const char* fragment_shader_text = R"(
 
    void main()
    {
-       fragcolor = texture(u_occupancy, texcoord);
+       float occup = texture(u_occupancy, texcoord).r;
+       //fragcolor = vec4(occup, 0, 0, 1);
+       fragcolor = vec4(mix(0.4, 1.0, clamp((occup - 0.5) * 2.0, 0.0, 1.0)),
+                        mix(1.0, 0.4, clamp(2.0 * occup ,  0.0, 1.0)),
+                        0, 1);
+
+       // fragcolor = texture(u_occupancy, texcoord);
    }
 )";
 
@@ -75,7 +82,8 @@ static void GLAPIENTRY ogl_error_cb(GLenum source, GLenum type, GLuint id, GLenu
 class mem_visualizer_impl {
 private:
    GLFWwindow* window           = nullptr;
-   int         sqr_sz           = 1024;
+   size_t      width            = 0;   // usable display pixels (<= window width)
+   size_t      height           = 0;   // usable display pixels (<= window height)
    glm::vec3   mouse_pos        = glm::vec3(0.0f, 0.0f, 0.0f); // mouse position on quad in [-1, 1] screen space
    glm::vec3   translation      = glm::vec3(0.0f, 0.0f, 0.0f); // in model space
    float       zoom             = 1.0f;                        // 1.0x to whatever
@@ -83,16 +91,18 @@ private:
    int         last_key         = 0;     // last key pressed using GLFW defines
    GLint       mvp_loc          = 0;
    uint32_t    vao_id           = 0;
-   glm::mat4   mvp;
+   glm::mat4   mvp              = glm::mat4(1.0f);
+   GLuint      texture_id       = 0;
    std::thread work_thread;
+   const segment_manager::occupancy_array_t& occup;
 
    std::atomic<bool> shutting_down = false;
 
 public:
    // -------------------------------------------------------------------------
-   mem_visualizer_impl(pinnable_mapped_file& pmf, uint64_t shared_file_size) {
-      mvp = glm::mat4(1.0f); // glm::ortho(0.f, 1.f, 0.f, 1.f, 0.f, 1.f);
-
+   mem_visualizer_impl(pinnable_mapped_file& pmf, uint64_t shared_file_size) :
+      occup(pmf.get_segment_manager()->get_occupancy())
+   {
       glfwSetErrorCallback(glfw_error_cb);
 
       if (!glfwInit()) {
@@ -107,7 +117,12 @@ public:
 
       // Create a window
       // ---------------
-      window = glfwCreateWindow(sqr_sz, sqr_sz, "Memory Occupancy view", nullptr, nullptr);
+      auto [tex_width, tex_height] = get_tex_dims();
+      double tex_ratio = (double)tex_width / tex_height;
+      height = 1024;
+      width = std::lround(tex_ratio * height);
+
+      window = glfwCreateWindow(width, height, "Memory Occupancy view", nullptr, nullptr);
       if (!window) {
          terminate("Failed to create window");
          return;
@@ -152,26 +167,11 @@ public:
          GLuint texture_id, program_id;
          GLint  vpos_location, texture_location;
 
-         // generate color texture
-         // ----------------------
-         {
-            struct rgba {
-               uint8_t r, g, b, a;
-            };
-            rgba pixels[16 * 16];
-
-            glGenTextures(1, &texture_id);
-            glBindTexture(GL_TEXTURE_2D, texture_id);
-
-            for (int y = 0; y < 16; y++) {
-               for (int x = 0; x < 16; x++) {
-                  pixels[y * 16 + x] = rgba{(uint8_t)(x * 16), (uint8_t)(y * 16), 0, 255};
-               }
-            }
-
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 16, 16, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+         glGenTextures(1, &texture_id);
+         if (0) {
+            update_texture_with_default_colors();
+         } else {
+            update_texture_from_occupancy();
          }
 
          // compile program and get uniform and attribute locations
@@ -232,6 +232,7 @@ public:
 
 
          while (!shutting_down) {
+            update_texture_from_occupancy();
             render();
             [[maybe_unused]] int last_key = process_events();
 
@@ -318,9 +319,19 @@ private:
    // -------------------------------------------------------------------------
    static void resize_cb(GLFWwindow* window, int width, int height) {
       auto& memv  = *static_cast<mem_visualizer_impl*>(glfwGetWindowUserPointer(window));
-      memv.sqr_sz = std::min(width, height);
-      memv.sqr_sz = std::max(memv.sqr_sz, 1);
-      glViewport(0, 0, memv.sqr_sz, memv.sqr_sz);
+      double ratio = (double)width / height;
+
+      auto [tex_width, tex_height] = memv.get_tex_dims();
+      double tex_ratio = (double)tex_width / tex_height;
+
+      if (ratio < tex_ratio) {
+         memv.width = width;
+         memv.height = std::lround(width / tex_ratio);
+      } else {
+         memv.height = height;
+         memv.width = std::lround(tex_ratio * height);
+      }
+      glViewport(0, 0, memv.width, memv.height);
    }
 
    // -------------------------------------------------------------------------
@@ -328,8 +339,8 @@ private:
       // x, y are in screen pixels, origin at top-left of window
       auto& memv = *static_cast<mem_visualizer_impl*>(glfwGetWindowUserPointer(window));
 
-      x = std::min(x, (double)(memv.sqr_sz)) / memv.sqr_sz;
-      y = std::min(y, (double)(memv.sqr_sz)) / memv.sqr_sz;
+      x = std::min(x, (double)(memv.width)) / memv.width;
+      y = std::min(y, (double)(memv.height)) / memv.height;
       y = 1.0 - y; // y origin at bottom
 
       // update coordinates for [-1, 1] range
@@ -403,6 +414,45 @@ private:
          glGetShaderInfoLog(id, maxLength, &maxLength, &errorLog[0]);
          std::cout << '\n' << type << ":\n" << &errorLog[0] << '\n';
       }
+   }
+
+   // -------------------------------------------------------------------------
+   void update_texture_with_default_colors() {
+      struct rgba {
+         uint8_t r, g, b, a;
+      };
+      rgba pixels[16 * 16];
+
+      glBindTexture(GL_TEXTURE_2D, texture_id);
+
+      for (int y = 0; y < 16; y++) {
+         for (int x = 0; x < 16; x++) {
+            pixels[y * 16 + x] = rgba{(uint8_t)(x * 16), (uint8_t)(y * 16), 0, 255};
+         }
+      }
+
+      glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 16, 16, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+   }
+
+   std::pair<size_t, size_t> get_tex_dims() const {
+      auto sz = std::bit_ceil(occup.size());
+      assert(sz == occup.size());
+
+      auto rzeros = std::countr_zero(sz);
+      auto width = sz >> (rzeros / 2);
+      auto height = (rzeros % 2) ? (width >> 1) : width;
+      return { width, height };
+   }
+
+   void update_texture_from_occupancy() {
+      auto [width, height] = get_tex_dims();
+
+      glBindTexture(GL_TEXTURE_2D, texture_id);
+      glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, width, height, 0, GL_RED, GL_UNSIGNED_BYTE, occup.data());
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
    }
 };
 

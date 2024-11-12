@@ -694,9 +694,9 @@ BOOST_AUTO_TEST_CASE(locality) {
       (_alloc.operator()<num_counts, counts>(), ...); // Calls _alloc<n, count> for each count
    };
 
-#if 1
+#if 0
    alloc_buckets.operator()<100>();
-#elif 1
+#elif 0
    alloc_buckets.operator()<50, 166>();
 #elif 1
    alloc_buckets.operator()<50, 111, 166, 275>();
