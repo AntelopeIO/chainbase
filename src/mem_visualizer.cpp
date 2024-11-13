@@ -39,6 +39,7 @@ static const char* vertex_shader_text = R"(
    #version 460
    layout(location = 0) in vec2 vPos;
    out vec2 texcoord;
+   out vec2 FragPos;
 
    uniform mat4 u_mvp;
 
@@ -46,15 +47,19 @@ static const char* vertex_shader_text = R"(
    {
        gl_Position = u_mvp * vec4(vPos, 0.0, 1.0);
        texcoord = (vPos + vec2(1.0, 1.0)) * 0.5;
+       FragPos = (gl_Position.xy + vec2(1.0, 1.0)) * 0.5;
    }
 )";
 
-static const char* fragment_shader_text = R"(
+[[maybe_unused]] static const char* fragment_shader_text = R"(
    #version 460
    in  vec2 texcoord;
+   in  vec2 FragPos;                                 // unused in this shader
    out vec4 fragcolor;
 
    uniform sampler2D u_occupancy;
+   uniform vec2      u_viewport_size;                // unused in this shader
+   uniform vec2      u_texture_size;                 // unused in this shader
 
    void main()
    {
@@ -66,6 +71,49 @@ static const char* fragment_shader_text = R"(
 
        // fragcolor = texture(u_occupancy, texcoord);
    }
+)";
+
+[[maybe_unused]] static const char* fragment_shader_text_n = R"(
+   #version 460
+   in  vec2 texcoord;
+   in  vec2 FragPos;
+   out vec4 fragcolor;
+
+   uniform sampler2D u_occupancy;
+   uniform vec2      u_viewport_size;
+   uniform vec2      u_texture_size;
+
+   void main()
+   {
+       // Calculate which texel we're in
+       vec2 texelCoord = floor(texcoord * u_texture_size);
+
+       // Get the center of the current texel in screen space
+       vec2 texelSize = u_viewport_size / u_texture_size;
+       vec2 texelCenter = (texelCoord + 0.5) * texelSize;
+
+       // Calculate distance from current fragment to texel center
+       float dist = distance(gl_FragCoord.xy, texelCenter);
+
+       // Set circle radius (slightly smaller than texel size to create spacing)
+       float radius = min(texelSize.x, texelSize.y) * 0.4;
+
+       // Create smooth circle
+       float circle = 1.0 - smoothstep(radius - 1.0, radius + 1.0, dist);
+
+       // Sample the texture (will get same value for all fragments within the texel)
+       float value = texture(u_occupancy, (texelCoord + 0.5) / u_texture_size).r;
+
+       // Create color based on the value
+       vec3 color = vec3(value); // For simple grayscale
+       // Or use a more interesting color mapping:
+       // vec3 color = mix(vec3(0.0, 0.2, 0.8), vec3(1.0, 0.4, 0.0), value);
+
+       fragcolor = vec4(color, 1.0) * circle;
+
+       // Discard fragments outside the circle
+       if (circle < 0.01) discard;
+  }
 )";
 
 static const float vertices[]{
@@ -81,18 +129,19 @@ static void GLAPIENTRY ogl_error_cb(GLenum source, GLenum type, GLuint id, GLenu
 // ----------------------------------------------------------------------------------------------------------------
 class mem_visualizer_impl {
 private:
-   GLFWwindow* window           = nullptr;
-   size_t      width            = 0;   // usable display pixels (<= window width)
-   size_t      height           = 0;   // usable display pixels (<= window height)
-   glm::vec3   mouse_pos        = glm::vec3(0.0f, 0.0f, 0.0f); // mouse position on quad in [-1, 1] screen space
-   glm::vec3   translation      = glm::vec3(0.0f, 0.0f, 0.0f); // in model space
-   float       zoom             = 1.0f;                        // 1.0x to whatever
-   bool        left_button_down = false; // when left button is down, mouse move translates the model
-   int         last_key         = 0;     // last key pressed using GLFW defines
-   GLint       mvp_loc          = 0;
-   uint32_t    vao_id           = 0;
-   glm::mat4   mvp              = glm::mat4(1.0f);
-   GLuint      texture_id       = 0;
+   GLFWwindow* window            = nullptr;
+   size_t      viewport_width    = 0;                           // usable display pixels (<= window width)
+   size_t      viewport_height   = 0;                           // usable display pixels (<= window height)
+   glm::vec3   mouse_pos         = glm::vec3(0.0f, 0.0f, 0.0f); // mouse position on quad in [-1, 1] screen space
+   glm::vec3   translation       = glm::vec3(0.0f, 0.0f, 0.0f); // in model space
+   float       zoom              = 1.0f;                        // 1.0x to whatever
+   bool        left_button_down  = false; // when left button is down, mouse move translates the model
+   int         last_key          = 0;     // last key pressed using GLFW defines
+   GLint       mvp_loc           = 0;
+   GLint       viewport_size_loc = 0;
+   uint32_t    vao_id            = 0;
+   glm::mat4   mvp               = glm::mat4(1.0f);
+   GLuint      texture_id        = 0;
    std::thread work_thread;
    const segment_manager::occupancy_array_t& occup;
 
@@ -119,10 +168,10 @@ public:
       // ---------------
       auto [tex_width, tex_height] = get_tex_dims();
       double tex_ratio = (double)tex_width / tex_height;
-      height = 1024;
-      width = std::lround(tex_ratio * height);
+      viewport_height = 1024;
+      viewport_width = std::lround(tex_ratio * viewport_height);
 
-      window = glfwCreateWindow(width, height, "Memory Occupancy view", nullptr, nullptr);
+      window = glfwCreateWindow(viewport_width, viewport_height, "Memory Occupancy view", nullptr, nullptr);
       if (!window) {
          terminate("Failed to create window");
          return;
@@ -141,13 +190,16 @@ public:
       // -----------------
       work_thread = std::thread([&]() {
          // Make the window's context current
+         // ---------------------------------
          glfwMakeContextCurrent(window);
 
          // Only enable vsync for the first of the windows to be swapped to
          // avoid waiting out the interval for each window
+         // ---------------------------------------------------------------
          glfwSwapInterval(1);
 
          // Initialize GLAD
+         // ---------------
          if (!gladLoadGL(glfwGetProcAddress)) {
             terminate("Failed to initialize GLAD");
             return;
@@ -165,7 +217,7 @@ public:
          glDebugMessageCallback(ogl_error_cb, 0);
 
          GLuint texture_id, program_id;
-         GLint  vpos_location, texture_location;
+         GLint  vpos_loc, occupancy_loc, texture_size_loc;
 
          glGenTextures(1, &texture_id);
          if (0) {
@@ -200,10 +252,12 @@ public:
                return;
             }
 
-            mvp_loc          = glGetUniformLocation(program_id, "u_mvp");
-            texture_location = glGetUniformLocation(program_id, "u_occupancy");
+            mvp_loc           = glGetUniformLocation(program_id, "u_mvp");
+            occupancy_loc     = glGetUniformLocation(program_id, "u_occupancy");
+            viewport_size_loc = glGetUniformLocation(program_id, "u_viewport_size");
+            texture_size_loc  = glGetUniformLocation(program_id, "u_texture_size");
 
-            vpos_location = glGetAttribLocation(program_id, "vPos");
+            vpos_loc          = glGetAttribLocation(program_id, "vPos");
          }
 
          // Create Vertex Array Buffer for vertices
@@ -221,16 +275,25 @@ public:
                                       0,      // offset of the first element in the buffer hctVBO.
                                       2 * sizeof(float));
 
-            glEnableVertexArrayAttrib(vao_id, vpos_location);
-            glVertexArrayAttribFormat(vao_id, vpos_location, 2, GL_FLOAT, false, 0);
-            glVertexArrayAttribBinding(vao_id, vpos_location, 0);
+            glEnableVertexArrayAttrib(vao_id, vpos_loc);
+            glVertexArrayAttribFormat(vao_id, vpos_loc, 2, GL_FLOAT, false, 0);
+            glVertexArrayAttribBinding(vao_id, vpos_loc, 0);
          }
 
          glUseProgram(program_id);
-         glUniform1i(texture_location, 0);
+
+         // set uniforms
+         // ------------
+         glUniform1i(occupancy_loc, 0);
+
+         auto [tex_width, tex_height] = get_tex_dims();
+         glUniform2f(texture_size_loc, (float)tex_width, (float)tex_height);
+         glUniform2f(viewport_size_loc, (float)viewport_width, (float)viewport_height);
+
          glBindTexture(GL_TEXTURE_2D, texture_id);
 
-
+         // Main display loop
+         // -----------------
          while (!shutting_down) {
             update_texture_from_occupancy();
             render();
@@ -325,13 +388,14 @@ private:
       double tex_ratio = (double)tex_width / tex_height;
 
       if (ratio < tex_ratio) {
-         memv.width = width;
-         memv.height = std::lround(width / tex_ratio);
+         memv.viewport_width = width;
+         memv.viewport_height = std::lround(width / tex_ratio);
       } else {
-         memv.height = height;
-         memv.width = std::lround(tex_ratio * height);
+         memv.viewport_height = height;
+         memv.viewport_width = std::lround(tex_ratio * height);
       }
-      glViewport(0, 0, memv.width, memv.height);
+      glViewport(0, 0, memv.viewport_width, memv.viewport_height);
+      glUniform2f(memv.viewport_size_loc, (float)memv.viewport_width, (float)memv.viewport_height);
    }
 
    // -------------------------------------------------------------------------
@@ -339,8 +403,8 @@ private:
       // x, y are in screen pixels, origin at top-left of window
       auto& memv = *static_cast<mem_visualizer_impl*>(glfwGetWindowUserPointer(window));
 
-      x = std::min(x, (double)(memv.width)) / memv.width;
-      y = std::min(y, (double)(memv.height)) / memv.height;
+      x = std::min(x, (double)(memv.viewport_width)) / memv.viewport_width;
+      y = std::min(y, (double)(memv.viewport_height)) / memv.viewport_height;
       y = 1.0 - y; // y origin at bottom
 
       // update coordinates for [-1, 1] range
