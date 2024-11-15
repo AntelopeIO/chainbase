@@ -295,20 +295,26 @@ public:
          // Main display loop
          // -----------------
          while (!shutting_down) {
-            update_texture_from_occupancy();
+            update_texture_from_occupancy();  // in theory we should use a mutex, but consistency of occupancy bytes not an issue
             render();
             [[maybe_unused]] int last_key = process_events();
 
-            std::this_thread::sleep_for(std::chrono::milliseconds{25}); // be nice don't hog the CPU
+            std::this_thread::sleep_for(std::chrono::milliseconds{10}); // be nice don't hog the CPU even though it is a sep. thread
          };
+         std::cerr << "mem_vis loop exited" << '\n';
+         glUseProgram(0);
+         glfwMakeContextCurrent(NULL);
+         if (window)
+            glfwDestroyWindow(window);
       });
    }
 
    // -------------------------------------------------------------------------
    ~mem_visualizer_impl() {
       shutting_down = true;
-      if (work_thread.joinable())
-         work_thread.join();
+      work_thread.join();
+      std::cerr << "mem_vis thread joined" << '\n';
+      glfwTerminate();
    }
 
    // -------------------------------------------------------------------------
@@ -350,6 +356,7 @@ public:
       std::cerr << "closing: " << message << '\n';
       if (window) {
          window = nullptr;
+
          glfwTerminate();
       }
    }
@@ -374,8 +381,23 @@ private:
       auto& memv = *static_cast<mem_visualizer_impl*>(glfwGetWindowUserPointer(window));
       if (action == GLFW_PRESS) {
          memv.last_key = key;
-         if (key == GLFW_KEY_ESCAPE)
-            memv.terminate("Escape key hit");
+         switch(key) {
+         case GLFW_KEY_ESCAPE:
+            //memv.terminate("Escape key hit");
+            break;
+
+         case GLFW_KEY_RIGHT:
+         case GLFW_KEY_LEFT:
+         case GLFW_KEY_DOWN:
+         case GLFW_KEY_UP:
+         case GLFW_KEY_PAGE_UP:
+         case GLFW_KEY_PAGE_DOWN:
+            std::cerr << "key: " << key << '\n';
+            break;
+
+         default:
+            break;
+         }
       }
    }
 
@@ -506,7 +528,9 @@ private:
    }
 
    std::pair<size_t, size_t> get_tex_dims() const {
-      auto sz = std::bit_ceil(occup.size());
+      auto sz = occup.empty() ? 0 : std::bit_ceil(occup.size());
+      if (sz != occup.size())
+         std::cerr << "sz=" << sz << ", occup.size()=" << occup.size() << '\n';
       assert(sz == occup.size());
 
       auto rzeros = std::countr_zero(sz);
@@ -531,7 +555,7 @@ mem_visualizer::mem_visualizer(pinnable_mapped_file& pmf, uint64_t shared_file_s
 
 // ----------------------------------------------------------------------------------------------------------------
 mem_visualizer::~mem_visualizer() {
-   my->terminate("mem_visualizer destructor called");
+   // `mem_visualizer_impl` destructor will be called when the `unique_ptr<> my;` is destroyed
 }
 
 } // namespace chainbase

@@ -255,9 +255,9 @@ pinnable_mapped_file::pinnable_mapped_file(const std::filesystem::path& dir, boo
 
    // start memory visualization thread if requested
    // ----------------------------------------------
-   auto mem_vis = getenv("CHAIN_MEMVIS");
-   if (mem_vis && (*mem_vis == '1' || *mem_vis == 'y'))
+   if (_writable && _segment_manager->initialize_occupancy()) {
       _mem_visualizer.reset(new mem_visualizer(*this, shared_file_size));
+   }
 }
 
 void pinnable_mapped_file::setup_copy_on_write_mapping() {
@@ -462,6 +462,7 @@ pinnable_mapped_file& pinnable_mapped_file::operator=(pinnable_mapped_file&& o) 
 }
 
 pinnable_mapped_file::~pinnable_mapped_file() {
+   _mem_visualizer.reset(); // stop the mem_visualizer *before* the shared segment is unmapped
    if(_writable) {
       if(_non_file_mapped_mapping) { //in heap or locked mode
          save_database_file();
