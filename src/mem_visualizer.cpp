@@ -528,11 +528,7 @@ private:
    }
 
    std::pair<size_t, size_t> get_tex_dims() const {
-      auto sz = occup.empty() ? 0 : std::bit_ceil(occup.size());
-      if (sz != occup.size())
-         std::cerr << "sz=" << sz << ", occup.size()=" << occup.size() << '\n';
-      assert(sz == occup.size());
-
+      auto sz = occup.size();
       auto rzeros = std::countr_zero(sz);
       auto width = sz >> (rzeros / 2);
       auto height = (rzeros % 2) ? (width >> 1) : width;
