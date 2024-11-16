@@ -301,7 +301,9 @@ public:
 
             std::this_thread::sleep_for(std::chrono::milliseconds{10}); // be nice don't hog the CPU even though it is a sep. thread
          };
-         std::cerr << "mem_vis loop exited" << '\n';
+
+         // Exiting
+         // -------
          glUseProgram(0);
          glfwMakeContextCurrent(NULL);
          if (window)
@@ -313,7 +315,6 @@ public:
    ~mem_visualizer_impl() {
       shutting_down = true;
       work_thread.join();
-      std::cerr << "mem_vis thread joined" << '\n';
       glfwTerminate();
    }
 
@@ -529,10 +530,24 @@ private:
 
    std::pair<size_t, size_t> get_tex_dims() const {
       auto sz = occup.size();
+      // we know that sz  is either a power of two, or the sum of two consecutive powers of two
+      auto num_ones = std::popcount(sz);
+      assert(num_ones == 1 || num_ones == 2);
       auto rzeros = std::countr_zero(sz);
-      auto width = sz >> (rzeros / 2);
-      auto height = (rzeros % 2) ? (width >> 1) : width;
-      return { width, height };
+      size_t width = 0, height = 0;
+      if (num_ones == 1) {
+         width  = sz >> (rzeros / 2);
+         height = sz / width;
+      } else if (num_ones == 2) {
+         if (rzeros % 2 == 0) {
+            width  = 1ull << (1 + rzeros / 2);
+            height = sz / width;
+         } else {
+            height = 1ull << (1 + rzeros / 2);
+            width  = sz / height;
+         }
+      }
+      return {width, height};
    }
 
    void update_texture_from_occupancy() {
