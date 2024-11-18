@@ -61,13 +61,22 @@ static const char* vertex_shader_text = R"(
    uniform vec2      u_viewport_size;                // unused in this shader
    uniform vec2      u_texture_size;                 // unused in this shader
 
+   const vec3 colors[4] = vec3[](
+       vec3(0.0, 1.0, 0.0),   // Green
+       vec3(0.0, 0.7, 0.0),   // Lighter Green
+       vec3(0.7, 0.0, 0.0),   // Lighter Red
+       vec3(1.0, 0.0, 0.0)    // Red
+   );
+
    void main()
    {
        float occup = texture(u_occupancy, texcoord).r;
        //fragcolor = vec4(occup, 0, 0, 1);
-       fragcolor = vec4(mix(0.4, 1.0, clamp((occup - 0.5) * 2.0, 0.0, 1.0)),
-                        mix(1.0, 0.4, clamp(2.0 * occup ,  0.0, 1.0)),
-                        0, 1);
+       //fragcolor = vec4(mix(0.4, 1.0, clamp((occup - 0.5) * 2.0, 0.0, 1.0)),
+       //                 mix(1.0, 0.4, clamp(2.0 * occup ,  0.0, 1.0)),
+       //                 0, 1);
+
+       fragcolor = vec4(colors[int(occup * 3.01)], 1.0); // use 4 colors
 
        // fragcolor = texture(u_occupancy, texcoord);
    }
