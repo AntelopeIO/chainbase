@@ -5,9 +5,12 @@
 #include <atomic>
 
 #define GLAD_GL_IMPLEMENTATION
+
 // <glad/gl.h> generated from https://gen.glad.sh/, gl 4.6 and glx 1.4,
 // compat profile, header only, GL_ARB_direct_state_access extension
+// -------------------------------------------------------------------
 #include <glad/gl.h>
+
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
@@ -51,7 +54,7 @@ static const char* vertex_shader_text = R"(
    }
 )";
 
-[[maybe_unused]] static const char* fragment_shader_text = R"(
+static const char* fragment_shader_text = R"(
    #version 460
    in  vec2 texcoord;
    in  vec2 FragPos;                                 // unused in this shader
@@ -71,58 +74,8 @@ static const char* vertex_shader_text = R"(
    void main()
    {
        float occup = texture(u_occupancy, texcoord).r;
-       //fragcolor = vec4(occup, 0, 0, 1);
-       //fragcolor = vec4(mix(0.4, 1.0, clamp((occup - 0.5) * 2.0, 0.0, 1.0)),
-       //                 mix(1.0, 0.4, clamp(2.0 * occup ,  0.0, 1.0)),
-       //                 0, 1);
-
        fragcolor = vec4(colors[int(occup * 3.01)], 1.0); // use 4 colors
-
-       // fragcolor = texture(u_occupancy, texcoord);
    }
-)";
-
-[[maybe_unused]] static const char* fragment_shader_text_n = R"(
-   #version 460
-   in  vec2 texcoord;
-   in  vec2 FragPos;
-   out vec4 fragcolor;
-
-   uniform sampler2D u_occupancy;
-   uniform vec2      u_viewport_size;
-   uniform vec2      u_texture_size;
-
-   void main()
-   {
-       // Calculate which texel we're in
-       vec2 texelCoord = floor(texcoord * u_texture_size);
-
-       // Get the center of the current texel in screen space
-       vec2 texelSize = u_viewport_size / u_texture_size;
-       vec2 texelCenter = (texelCoord + 0.5) * texelSize;
-
-       // Calculate distance from current fragment to texel center
-       float dist = distance(gl_FragCoord.xy, texelCenter);
-
-       // Set circle radius (slightly smaller than texel size to create spacing)
-       float radius = min(texelSize.x, texelSize.y) * 0.4;
-
-       // Create smooth circle
-       float circle = 1.0 - smoothstep(radius - 1.0, radius + 1.0, dist);
-
-       // Sample the texture (will get same value for all fragments within the texel)
-       float value = texture(u_occupancy, (texelCoord + 0.5) / u_texture_size).r;
-
-       // Create color based on the value
-       vec3 color = vec3(value); // For simple grayscale
-       // Or use a more interesting color mapping:
-       // vec3 color = mix(vec3(0.0, 0.2, 0.8), vec3(1.0, 0.4, 0.0), value);
-
-       fragcolor = vec4(color, 1.0) * circle;
-
-       // Discard fragments outside the circle
-       if (circle < 0.01) discard;
-  }
 )";
 
 static const float vertices[]{
@@ -144,8 +97,8 @@ private:
    glm::vec3   mouse_pos         = glm::vec3(0.0f, 0.0f, 0.0f); // mouse position on quad in [-1, 1] screen space
    glm::vec3   translation       = glm::vec3(0.0f, 0.0f, 0.0f); // in model space
    float       zoom              = 1.0f;                        // 1.0x to whatever
-   bool        left_button_down  = false; // when left button is down, mouse move translates the model
-   int         last_key          = 0;     // last key pressed using GLFW defines
+   bool        left_button_down  = false;                       // when left button is down, mouse move translates the model
+   int         last_key          = 0;                           // last key pressed using GLFW defines
    GLint       mvp_loc           = 0;
    GLint       viewport_size_loc = 0;
    uint32_t    vao_id            = 0;
@@ -158,9 +111,8 @@ private:
 
 public:
    // -------------------------------------------------------------------------
-   mem_visualizer_impl(pinnable_mapped_file& pmf, uint64_t shared_file_size) :
-      occup(pmf.get_segment_manager()->get_occupancy())
-   {
+   mem_visualizer_impl(pinnable_mapped_file& pmf, uint64_t shared_file_size)
+      : occup(pmf.get_segment_manager()->get_occupancy()) {
       glfwSetErrorCallback(glfw_error_cb);
 
       if (!glfwInit()) {
@@ -176,9 +128,9 @@ public:
       // Create a window
       // ---------------
       auto [tex_width, tex_height] = get_tex_dims();
-      double tex_ratio = (double)tex_width / tex_height;
-      viewport_height = 1024;
-      viewport_width = std::lround(tex_ratio * viewport_height);
+      double tex_ratio             = (double)tex_width / tex_height;
+      viewport_height              = 1024;
+      viewport_width               = std::lround(tex_ratio * viewport_height);
 
       window = glfwCreateWindow(viewport_width, viewport_height, "Memory Occupancy view", nullptr, nullptr);
       if (!window) {
@@ -266,7 +218,7 @@ public:
             viewport_size_loc = glGetUniformLocation(program_id, "u_viewport_size");
             texture_size_loc  = glGetUniformLocation(program_id, "u_texture_size");
 
-            vpos_loc          = glGetAttribLocation(program_id, "vPos");
+            vpos_loc = glGetAttribLocation(program_id, "vPos");
          }
 
          // Create Vertex Array Buffer for vertices
@@ -304,11 +256,13 @@ public:
          // Main display loop
          // -----------------
          while (!shutting_down) {
-            update_texture_from_occupancy();  // in theory we should use a mutex, but consistency of occupancy bytes not an issue
+            update_texture_from_occupancy(); // in theory we should use a mutex, but consistency of occupancy bytes not
+                                             // an issue
             render();
             [[maybe_unused]] int last_key = process_events();
 
-            std::this_thread::sleep_for(std::chrono::milliseconds{10}); // be nice don't hog the CPU even though it is a sep. thread
+            std::this_thread::sleep_for(
+               std::chrono::milliseconds{10}); // be nice don't hog the CPU even though it is a sep. thread
          };
 
          // Exiting
@@ -324,7 +278,8 @@ public:
    ~mem_visualizer_impl() {
       shutting_down = true;
       work_thread.join();
-      glfwTerminate();
+      if (window) 
+         glfwTerminate();
    }
 
    // -------------------------------------------------------------------------
@@ -363,10 +318,8 @@ public:
          return;
       shutting_down = true;
 
-      std::cerr << "closing: " << message << '\n';
       if (window) {
          window = nullptr;
-
          glfwTerminate();
       }
    }
@@ -391,9 +344,9 @@ private:
       auto& memv = *static_cast<mem_visualizer_impl*>(glfwGetWindowUserPointer(window));
       if (action == GLFW_PRESS) {
          memv.last_key = key;
-         switch(key) {
+         switch (key) {
          case GLFW_KEY_ESCAPE:
-            //memv.terminate("Escape key hit");
+            // memv.terminate("Escape key hit");
             break;
 
          case GLFW_KEY_RIGHT:
@@ -402,7 +355,7 @@ private:
          case GLFW_KEY_UP:
          case GLFW_KEY_PAGE_UP:
          case GLFW_KEY_PAGE_DOWN:
-            std::cerr << "key: " << key << '\n';
+            // scroll by 1 page if zoomed in - tbd
             break;
 
          default:
@@ -413,18 +366,18 @@ private:
 
    // -------------------------------------------------------------------------
    static void resize_cb(GLFWwindow* window, int width, int height) {
-      auto& memv  = *static_cast<mem_visualizer_impl*>(glfwGetWindowUserPointer(window));
+      auto&  memv  = *static_cast<mem_visualizer_impl*>(glfwGetWindowUserPointer(window));
       double ratio = (double)width / height;
 
       auto [tex_width, tex_height] = memv.get_tex_dims();
-      double tex_ratio = (double)tex_width / tex_height;
+      double tex_ratio             = (double)tex_width / tex_height;
 
       if (ratio < tex_ratio) {
-         memv.viewport_width = width;
+         memv.viewport_width  = width;
          memv.viewport_height = std::lround(width / tex_ratio);
       } else {
          memv.viewport_height = height;
-         memv.viewport_width = std::lround(tex_ratio * height);
+         memv.viewport_width  = std::lround(tex_ratio * height);
       }
       glViewport(0, 0, memv.viewport_width, memv.viewport_height);
       glUniform2f(memv.viewport_size_loc, (float)memv.viewport_width, (float)memv.viewport_height);
@@ -451,8 +404,6 @@ private:
          memv.update_mvp();
       }
       memv.mouse_pos = new_mouse_pos;
-
-      // fprintf(stderr, "x = %.2f, y = %.2f\n", memv.position.x, memv.position.y);
    }
 
    // -------------------------------------------------------------------------
@@ -476,7 +427,7 @@ private:
       zoom = std::max(1.0f, zoom); // Prevent zooming out
 
       if (zoom <= 1.0f) {
-         memv.zoom = zoom;
+         memv.zoom        = zoom;
          memv.translation = glm::vec3{0};
       } else {
          // figure out how much the point that was under the mouse has moved away because
@@ -542,7 +493,7 @@ private:
       // we know that sz  is either a power of two, or the sum of two consecutive powers of two
       auto num_ones = std::popcount(sz);
       assert(num_ones == 1 || num_ones == 2);
-      auto rzeros = std::countr_zero(sz);
+      auto   rzeros = std::countr_zero(sz);
       size_t width = 0, height = 0;
       if (num_ones == 1) {
          width  = sz >> (rzeros / 2);
