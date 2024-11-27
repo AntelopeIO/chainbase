@@ -251,7 +251,10 @@ pinnable_mapped_file::pinnable_mapped_file(const std::filesystem::path& dir, boo
    }
    std::byte* start = (std::byte*)_segment_manager;
    assert(_segment_manager_map.find(start) == _segment_manager_map.end());
-   _segment_manager_map[start] = start + _segment_manager->get_size();
+
+   byte_segment_allocator byte_allocator(_segment_manager);
+   _segment_manager_map[start] = seg_info_t{start + _segment_manager->get_size(),
+                                            new ss_allocator(byte_allocator)};
 }
 
 void pinnable_mapped_file::setup_copy_on_write_mapping() {

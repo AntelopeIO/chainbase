@@ -5,6 +5,7 @@
 #include <boost/interprocess/sync/file_lock.hpp>
 #include <boost/asio/io_service.hpp>
 #include <boost/container/flat_map.hpp>
+#include <chainbase/small_size_allocator.hpp>
 #include <filesystem>
 #include <vector>
 #include <optional>
@@ -45,7 +46,14 @@ public:
 using segment_manager = bip::managed_mapped_file::segment_manager;
 
 template<typename T>
-using allocator = bip::allocator<T, segment_manager>;
+using segment_allocator = bip::allocator<T, segment_manager>;
+
+using byte_segment_allocator = segment_allocator<uint8_t>;
+
+using ss_allocator = small_size_allocator<byte_segment_allocator>;
+
+template<typename T>
+using allocator = object_allocator<T, ss_allocator>;
 
 class pinnable_mapped_file {
    public:
@@ -72,13 +80,15 @@ class pinnable_mapped_file {
             auto it = _segment_manager_map.upper_bound(object);
             if(it == _segment_manager_map.begin())
                return {};
-            auto [seg_start, seg_end] = *(--it);
+            auto [seg_start, seg_info] = *(--it);
             // important: we need to check whether the pointer is really within the segment, as shared objects'
             // can also be created on the stack (in which case the data is actually allocated on the heap using
             // std::allocator). This happens for example when `shared_cow_string`s are inserted into a bip::multimap,
             // and temporary pairs are created on the stack by the bip::multimap code.
-            if (object < seg_end)
-               return allocator<T>(reinterpret_cast<segment_manager *>(seg_start));
+            if (object < seg_info.seg_end) {
+               ss_allocator* ss_alloc = seg_info.alloc;
+               return std::optional<allocator<T>>{allocator<T>(ss_alloc)};
+            }
          }
          return {};
       }
@@ -114,7 +124,8 @@ class pinnable_mapped_file {
 
       static std::vector<pinnable_mapped_file*>     _instance_tracker;
 
-      using segment_manager_map_t = boost::container::flat_map<void*, void *>;
+      struct seg_info_t { void* seg_end; ss_allocator* alloc; };
+      using segment_manager_map_t = boost::container::flat_map<void*, seg_info_t>;
       static segment_manager_map_t                  _segment_manager_map;
 
       constexpr static unsigned                     _db_size_multiple_requirement = 1024*1024; //1MB
