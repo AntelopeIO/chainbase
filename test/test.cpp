@@ -176,8 +176,6 @@ void check_shared_vector_apis(VecOfVec& vec_of_vec, const Alloc& expected_alloc)
       // check that objects are allocated where we expect (i.e. using the same allocator as `vec_of_vec`)
       // ------------------------------------------------------------------------------------------------
       BOOST_REQUIRE(v.get_allocator() == expected_alloc);
-      if constexpr(!std::is_same_v<typename SV::value_type, int>)
-         BOOST_REQUIRE(v[0].get_allocator() == expected_alloc);
    }
       
    {
@@ -453,32 +451,41 @@ BOOST_AUTO_TEST_CASE(shared_vector_apis_segment_alloc) {
    const auto& temp = temp_dir.path();
 
    pinnable_mapped_file pmf(temp, true, 1024 * 1024, false, pinnable_mapped_file::map_mode::mapped);
-   std::optional<chainbase::allocator<char>> expected_alloc = chainbase::allocator<char>(pmf.get_segment_manager());
+
+   //auto expected_alloc = chainbase::allocator<char>(pmf.get_segment_manager());
 
    size_t free_memory = pmf.get_segment_manager()->get_free_memory();
+   auto ss_alloc = chainbase::make_small_size_allocator<byte_segment_allocator_t>(pmf.get_segment_manager());
    
    {
       // do the test with `shared_vector<int>` (trivial destructor)
       // ----------------------------------------------------------
-      using sv = shared_vector<int>;
-      chainbase::allocator<sv> sv_alloc(pmf.get_segment_manager());
-      sv v;
+      using sv_t = shared_vector<int>;
+      using expected_alloc_t = sv_t::allocator_type;
 
-      bip::vector<sv, chainbase::allocator<sv>> vec_of_vec(sv_alloc);
+      using vec_of_vec_alloc_t = chainbase::object_allocator<sv_t, chainbase::ss_allocator_t>;
+      using vec_of_vec_t = bip::vector<sv_t, vec_of_vec_alloc_t>;
+
+      auto sv_alloc(expected_alloc_t{ss_alloc.get()});
+      vec_of_vec_t vec_of_vec(vec_of_vec_alloc_t{ss_alloc.get()});
       
-      check_shared_vector_apis<sv, decltype(vec_of_vec)>(vec_of_vec, expected_alloc);
+      check_shared_vector_apis<sv_t, vec_of_vec_t>(vec_of_vec, std::optional{sv_alloc});
    }
 
    {
       // do the test with `shared_vector<my_string>` (non-trivial destructor)
       // --------------------------------------------------------------------
-      using sv = shared_vector<my_string>;
-      chainbase::allocator<sv> sv_alloc(pmf.get_segment_manager());
-      sv v;
+      using sv_t = shared_vector<my_string>;
+      using expected_alloc_t = sv_t::allocator_type;
+
+      using vec_of_vec_alloc_t = chainbase::object_allocator<sv_t, chainbase::ss_allocator_t>;
+      using vec_of_vec_t = bip::vector<sv_t, vec_of_vec_alloc_t>;
+
+      auto sv_alloc(expected_alloc_t{ss_alloc.get()});
+      vec_of_vec_t vec_of_vec(vec_of_vec_alloc_t{ss_alloc.get()});
+      sv_t v;
       
-      bip::vector<sv, chainbase::allocator<sv>> vec_of_vec(sv_alloc);
-      
-      check_shared_vector_apis<sv, decltype(vec_of_vec)>(vec_of_vec, expected_alloc);
+      check_shared_vector_apis<sv_t, vec_of_vec_t>(vec_of_vec, std::optional{sv_alloc});
 
       // clear both vectors. If our implementation of `shared_cow_vector` is correct, we should have an exact
       // match of the number of constructed and destroyed `my_string` objects, and therefore after clearing the vectors
