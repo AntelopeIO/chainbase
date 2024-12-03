@@ -9,28 +9,42 @@
 #include <string>
 #include <functional>
 #include <mutex>
+#include <boost/interprocess/offset_ptr.hpp>
+
+namespace bip = boost::interprocess;
 
 namespace chainbase {
 
 namespace detail {
 
-template <class backing_allocator, std::size_t sz>
-class allocator {
-public:
-   backing_allocator& _back_alloc;
+template <class backing_allocator>
+class allocator_base {
+   using pointer = backing_allocator::pointer;
+   virtual pointer allocate() = 0;
+   virtual void deallocate(const pointer& p) = 0;
+};
 
+template <class backing_allocator, std::size_t sz>
+class allocator : public allocator_base<backing_allocator> {
+public:
    allocator(backing_allocator* back_alloc) :
       _back_alloc(*back_alloc) {
    }
 
    using pointer = backing_allocator::pointer;
 
-   pointer allocate();
+   pointer allocate() final {
+      std::lock_guard g(_m);
+      return pointer(nullptr);
+   }
    
-   void deallocate(const pointer& p);
+   void deallocate(const pointer& p) final {
+      std::lock_guard g(_m);
+   }
 
 private:
-   std::mutex _m;  // must be thread-safe
+   bip::offset_ptr<backing_allocator> _back_alloc;
+   std::mutex _m;
 };
 
 } // namespace detail
@@ -51,6 +65,8 @@ public:
 private:
    template <std::size_t... I>
    static constexpr auto make_alloc_tuple(backing_allocator* back_alloc, std::index_sequence<I...>) {
+      // todo: should be tuple of  `bip::offset_ptr`
+      // should be allocated from `backing_allocator`
       return std::tuple{new detail::allocator<backing_allocator, (I + 1) * size_increment>(back_alloc)...};
    }
 
@@ -116,24 +132,25 @@ private:
 template<typename T, class backing_allocator>
 class object_allocator {
 public:
-   using pointer = backing_allocator::pointer;
-   using value_type = T;
-   
+   using char_pointer = backing_allocator::pointer;
+   using pointer      = char_pointer::template rebind<T>;
+   using value_type   = T;
+
    object_allocator(backing_allocator* back_alloc) :_back_alloc(back_alloc) {
    }
 
    pointer allocate(std::size_t num_objects) {
-      return _back_alloc->allocate(num_objects * sizeof(T));
+      return pointer(static_cast<T*>(static_cast<void*>(_back_alloc->allocate(num_objects * sizeof(T)).get())));
    }
 
    void deallocate(const pointer& p, std::size_t num_objects) {
-      return _back_alloc->deallocate(p, num_objects * sizeof(T));
+      return _back_alloc->deallocate(char_pointer(static_cast<char*>(static_cast<void*>(p.get()))), num_objects * sizeof(T));
    }
 
    bool operator==(const object_allocator&) const = default;
    
 private:
-   backing_allocator* _back_alloc; // allocates by size in bytes
+   backing_allocator* _back_alloc; // allocates by size in bytes // todo: should be `offset_ptr`
 };
 
 } // namespace chainbase

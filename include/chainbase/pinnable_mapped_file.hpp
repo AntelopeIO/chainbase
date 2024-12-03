@@ -138,6 +138,13 @@ class pinnable_mapped_file {
       constexpr static size_t                       _db_size_copy_increment       = 1024*1024*1024; //1GB
 };
 
+// pointer can be to the segment manager, or any object contained within.
+// ---------------------------------------------------------------------
+template <class T>
+auto make_allocator(void* seg_mgr) {
+   return *pinnable_mapped_file::get_allocator<T>(seg_mgr);
+}
+
 std::istream& operator>>(std::istream& in, pinnable_mapped_file::map_mode& runtime);
 std::ostream& operator<<(std::ostream& osm, pinnable_mapped_file::map_mode m);
 
