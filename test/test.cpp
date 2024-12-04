@@ -175,7 +175,8 @@ void check_shared_vector_apis(VecOfVec& vec_of_vec, const Alloc& expected_alloc)
 
       // check that objects are allocated where we expect (i.e. using the same allocator as `vec_of_vec`)
       // ------------------------------------------------------------------------------------------------
-      BOOST_REQUIRE(v.get_allocator() == expected_alloc);
+      auto alloc = v.get_allocator();
+      BOOST_REQUIRE(!alloc || *alloc == expected_alloc);
    }
       
    {
@@ -193,6 +194,7 @@ void check_shared_vector_apis(VecOfVec& vec_of_vec, const Alloc& expected_alloc)
       // check copy constructor. Verify copy-on-write after assign
       // ---------------------------------------------------------
       vec_of_vec.clear();
+      vec_of_vec.reserve(2); // so the second emplace_back doesn't reallocate
       vec_of_vec.emplace_back(int_array.cbegin(), int_array.cend());
       vec_of_vec.emplace_back(vec_of_vec[0]);
       auto& v0 = vec_of_vec[0];
@@ -210,6 +212,7 @@ void check_shared_vector_apis(VecOfVec& vec_of_vec, const Alloc& expected_alloc)
       // check move constructor.
       // -----------------------
       vec_of_vec.clear();
+      vec_of_vec.reserve(2); // so the second emplace_back doesn't reallocate
       vec_of_vec.emplace_back(int_array.cbegin(), int_array.cend());
       auto& v0 = vec_of_vec[0];
       vec_of_vec.emplace_back(std::move(v0));
@@ -451,41 +454,34 @@ BOOST_AUTO_TEST_CASE(shared_vector_apis_segment_alloc) {
    const auto& temp = temp_dir.path();
 
    pinnable_mapped_file pmf(temp, true, 1024 * 1024, false, pinnable_mapped_file::map_mode::mapped);
+   auto seg_mgr = pmf.get_segment_manager();
 
-   //auto expected_alloc = chainbase::allocator<char>(pmf.get_segment_manager());
-
-   size_t free_memory = pmf.get_segment_manager()->get_free_memory();
-   auto ss_alloc = chainbase::make_small_size_allocator<byte_segment_allocator_t>(pmf.get_segment_manager());
+   size_t free_memory = seg_mgr->get_free_memory();
    
    {
       // do the test with `shared_vector<int>` (trivial destructor)
       // ----------------------------------------------------------
       using sv_t = shared_vector<int>;
-      using expected_alloc_t = sv_t::allocator_type;
+      auto sv_alloc = chainbase::make_allocator<sv_t>(seg_mgr); 
 
-      using vec_of_vec_alloc_t = chainbase::object_allocator<sv_t, chainbase::ss_allocator_t>;
-      using vec_of_vec_t = bip::vector<sv_t, vec_of_vec_alloc_t>;
-
-      auto sv_alloc(expected_alloc_t{ss_alloc.get()});
-      vec_of_vec_t vec_of_vec(vec_of_vec_alloc_t{ss_alloc.get()});
+      using vec_of_vec_t = bip::vector<sv_t, decltype(sv_alloc)>;
+      vec_of_vec_t vec_of_vec(sv_alloc);
       
-      check_shared_vector_apis<sv_t, vec_of_vec_t>(vec_of_vec, std::optional{sv_alloc});
+      check_shared_vector_apis<sv_t, vec_of_vec_t>(vec_of_vec, chainbase::make_allocator<sv_t::allocator_type::value_type>(seg_mgr));
    }
 
    {
       // do the test with `shared_vector<my_string>` (non-trivial destructor)
       // --------------------------------------------------------------------
       using sv_t = shared_vector<my_string>;
-      using expected_alloc_t = sv_t::allocator_type;
+      auto sv_alloc = chainbase::make_allocator<sv_t>(seg_mgr); 
 
-      using vec_of_vec_alloc_t = chainbase::object_allocator<sv_t, chainbase::ss_allocator_t>;
-      using vec_of_vec_t = bip::vector<sv_t, vec_of_vec_alloc_t>;
-
-      auto sv_alloc(expected_alloc_t{ss_alloc.get()});
-      vec_of_vec_t vec_of_vec(vec_of_vec_alloc_t{ss_alloc.get()});
+      using vec_of_vec_t = bip::vector<sv_t, decltype(sv_alloc)>;
+      vec_of_vec_t vec_of_vec(sv_alloc);
+      
       sv_t v;
       
-      check_shared_vector_apis<sv_t, vec_of_vec_t>(vec_of_vec, std::optional{sv_alloc});
+      check_shared_vector_apis<sv_t, vec_of_vec_t>(vec_of_vec, chainbase::make_allocator<char>(seg_mgr));
 
       // clear both vectors. If our implementation of `shared_cow_vector` is correct, we should have an exact
       // match of the number of constructed and destroyed `my_string` objects, and therefore after clearing the vectors

@@ -58,7 +58,7 @@ using allocator = object_allocator<T, ss_allocator_t>;
 template <class backing_allocator>
 auto make_small_size_allocator(segment_manager* seg_mgr) {
    byte_segment_allocator_t byte_allocator(seg_mgr);
-   return std::make_unique<ss_allocator_t>(byte_allocator);
+   return new (seg_mgr->allocate(sizeof(ss_allocator_t))) ss_allocator_t(byte_allocator);
 }
 
 class pinnable_mapped_file {
@@ -92,8 +92,8 @@ class pinnable_mapped_file {
             // std::allocator). This happens for example when `shared_cow_string`s are inserted into a bip::multimap,
             // and temporary pairs are created on the stack by the bip::multimap code.
             if (object < seg_info.seg_end) {
-               ss_allocator_t* ss_alloc = seg_info.alloc.get();
-               return std::optional<allocator<T>>{allocator<T>(ss_alloc)};
+               assert(seg_info.ss_alloc);
+               return std::optional<allocator<T>>{allocator<T>(seg_info.ss_alloc)};
             }
          }
          return {};
@@ -130,7 +130,7 @@ class pinnable_mapped_file {
 
       static std::vector<pinnable_mapped_file*>     _instance_tracker;
 
-      struct seg_info_t { void* seg_end; std::unique_ptr<ss_allocator_t> alloc; };
+      struct seg_info_t { void* seg_end; ss_allocator_t* ss_alloc; };
       using segment_manager_map_t = boost::container::flat_map<void*, seg_info_t>;
       static segment_manager_map_t                  _segment_manager_map;
 
