@@ -21,31 +21,68 @@ template <class backing_allocator>
 class allocator_base {
 public:
    using pointer = backing_allocator::pointer;
-   virtual pointer allocate() = 0;
-   virtual void deallocate(const pointer& p) = 0;
+
+   virtual pointer allocate()                    = 0;
+   virtual void    deallocate(const pointer& p)  = 0;
+   virtual size_t  freelist_memory_usage()       = 0;
 };
 
 template <class backing_allocator, std::size_t sz>
 class allocator : public allocator_base<backing_allocator> {
 public:
+   using T = std::array<char, sz>;
+   using pointer = backing_allocator::pointer;
+
    allocator(backing_allocator back_alloc) :
       _back_alloc(back_alloc) {
    }
 
-   using pointer = backing_allocator::pointer;
-
    pointer allocate() final {
       std::lock_guard g(_m);
-      return pointer(nullptr);
+      if (_freelist == nullptr) {
+         get_some();
+      }
+      list_item* result = &*_freelist;
+      _freelist         = _freelist->_next;
+      result->~list_item();
+      --_freelist_size;
+      return pointer{(typename backing_allocator::value_type*)result};
    }
-   
+
    void deallocate(const pointer& p) final {
       std::lock_guard g(_m);
+      _freelist = new (&*p) list_item{_freelist};
+      ++_freelist_size;
+   }
+
+   size_t freelist_memory_usage() final {
+      std::lock_guard g(_m);
+      return _freelist_size * sizeof(T);
    }
 
 private:
-   backing_allocator _back_alloc;
-   std::mutex _m;
+   struct list_item { bip::offset_ptr<list_item> _next; };
+   static constexpr size_t allocation_batch_size = 128;
+
+   void get_some() {
+      static_assert(sizeof(T) >= sizeof(list_item), "Too small for free list");
+      static_assert(sizeof(T) % alignof(list_item) == 0, "Bad alignment for free list");
+
+      char* result = (char*)&*_back_alloc.allocate(sizeof(T) * allocation_batch_size);
+      _freelist_size += allocation_batch_size;
+      _freelist = bip::offset_ptr<list_item>{(list_item*)result};
+      for (unsigned i = 0; i < allocation_batch_size - 1; ++i) {
+         char* next = result + sizeof(T);
+         new (result) list_item{bip::offset_ptr<list_item>{(list_item*)next}};
+         result = next;
+      }
+      new (result) list_item{nullptr};
+   }
+
+   backing_allocator          _back_alloc;
+   bip::offset_ptr<list_item> _freelist;
+   size_t                     _freelist_size = 0;
+   std::mutex                 _m;
 };
 
 } // namespace detail
@@ -59,6 +96,7 @@ private:
 //  allocate/deallocate specify size in bytes.
 // ---------------------------------------------------------------------------------------
 template <class backing_allocator, size_t num_allocators = 64, size_t size_increment = 8>
+requires ((size_increment & (size_increment - 1)) == 0) // power of two
 class small_size_allocator {
 public:
    using pointer = backing_allocator::pointer;
@@ -69,10 +107,12 @@ private:
    backing_allocator                          _back_alloc;
    std::array<base_alloc_ptr, num_allocators> _allocators;
 
-   static constexpr size_t mask     = size_increment - 1;
    static constexpr size_t max_size = num_allocators * size_increment;
    
-   static constexpr size_t allocator_index(size_t sz_in_bytes) { return (sz_in_bytes + mask) & ~mask; }
+   static constexpr size_t allocator_index(size_t sz_in_bytes) {
+      assert(sz_in_bytes > 0);
+      return (sz_in_bytes -1) / size_increment;
+   }
 
    template <std::size_t... I>
    auto make_allocators(backing_allocator back_alloc, std::index_sequence<I...>) {
@@ -87,15 +127,16 @@ public:
       , _allocators(make_allocators(back_alloc, std::make_index_sequence<num_allocators>{})) {}
 
    pointer allocate(std::size_t sz_in_bytes) {
-      if (0 && sz_in_bytes <= max_size)
+      if (sz_in_bytes <= max_size)
          return _allocators[allocator_index(sz_in_bytes)]->allocate();
       return _back_alloc.allocate(sz_in_bytes);
    }
 
    void deallocate(const pointer& p, std::size_t sz_in_bytes) {
-      if (0 && sz_in_bytes <= max_size)
+      if (sz_in_bytes <= max_size)
          _allocators[allocator_index(sz_in_bytes)]->deallocate(p);
-      _back_alloc.deallocate(p, sz_in_bytes);
+      else
+         _back_alloc.deallocate(p, sz_in_bytes);
    }
 };
 
@@ -105,6 +146,8 @@ public:
 //          ----------------
 //
 //  emulates the API of `bip::allocator<T, segment_manager>`
+//
+//  backing_allocator is `the small_size_allocator`
 // ---------------------------------------------------------------------------------------
 template<typename T, class backing_allocator>
 class object_allocator {
@@ -121,6 +164,7 @@ public:
    }
 
    void deallocate(const pointer& p, std::size_t num_objects) {
+      assert(p != nullptr);
       return _back_alloc->deallocate(char_pointer(static_cast<char*>(static_cast<void*>(p.get()))), num_objects * sizeof(T));
    }
 
