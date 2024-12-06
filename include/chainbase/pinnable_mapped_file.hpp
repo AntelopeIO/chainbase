@@ -80,6 +80,8 @@ class pinnable_mapped_file {
       segment_manager* get_segment_manager() const { return _segment_manager;}
       size_t           check_memory_and_flush_if_needed();
 
+      static ss_allocator_t* get_small_size_allocator(std::byte* seg_mgr);
+
       template<typename T>
       static std::optional<allocator<T>> get_allocator(void *object) {
          if (!_segment_manager_map.empty()) {
@@ -92,8 +94,7 @@ class pinnable_mapped_file {
             // std::allocator). This happens for example when `shared_cow_string`s are inserted into a bip::multimap,
             // and temporary pairs are created on the stack by the bip::multimap code.
             if (object < seg_info.seg_end) {
-               assert(seg_info.ss_alloc);
-               return std::optional<allocator<T>>{allocator<T>(seg_info.ss_alloc)};
+               return std::optional<allocator<T>>{allocator<T>(get_small_size_allocator(static_cast<std::byte*>(seg_start)))};
             }
          }
          return {};
@@ -130,7 +131,7 @@ class pinnable_mapped_file {
 
       static std::vector<pinnable_mapped_file*>     _instance_tracker;
 
-      struct seg_info_t { void* seg_end; ss_allocator_t* ss_alloc; };
+      struct seg_info_t { void* seg_end; };
       using segment_manager_map_t = boost::container::flat_map<void*, seg_info_t>;
       static segment_manager_map_t                  _segment_manager_map;
 

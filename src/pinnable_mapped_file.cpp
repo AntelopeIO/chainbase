@@ -252,10 +252,18 @@ pinnable_mapped_file::pinnable_mapped_file(const std::filesystem::path& dir, boo
    std::byte* start = (std::byte*)_segment_manager;
    assert(_segment_manager_map.find(start) == _segment_manager_map.end());
 
-   _segment_manager_map[start] =
-   seg_info_t{start + _segment_manager->get_size(),
-              _writable
-              ? make_small_size_allocator<byte_segment_allocator_t>(_segment_manager) : nullptr };
+   ss_allocator_t* ss_alloc = get_small_size_allocator(start); // relies on `_segment_manager` being initialized
+   if (!ss_alloc && _writable) {
+      db_header* header = reinterpret_cast<db_header*>(start - header_size);
+      header->small_size_allocator = (char *)make_small_size_allocator<byte_segment_allocator_t>(_segment_manager);
+   }
+
+   _segment_manager_map[start] = seg_info_t{start + _segment_manager->get_size()};
+}
+
+ss_allocator_t* pinnable_mapped_file::get_small_size_allocator(std::byte* seg_mgr) {
+   db_header* header = reinterpret_cast<db_header*>(seg_mgr - header_size);
+   return (ss_allocator_t*)&*header->small_size_allocator;
 }
 
 void pinnable_mapped_file::setup_copy_on_write_mapping() {

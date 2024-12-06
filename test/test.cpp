@@ -494,7 +494,9 @@ BOOST_AUTO_TEST_CASE(shared_vector_apis_segment_alloc) {
 
    // make sure we didn't leak memory
    // -------------------------------
-   BOOST_REQUIRE_EQUAL(free_memory, pmf.get_segment_manager()->get_free_memory());
+   auto ss_alloc = pinnable_mapped_file::get_small_size_allocator((std::byte*)pmf.get_segment_manager());
+   BOOST_REQUIRE_EQUAL(free_memory, pmf.get_segment_manager()->get_free_memory() + ss_alloc->freelist_memory_usage() +
+                                       ss_alloc->memory_overhead());
 }
 
 // -----------------------------------------------------------------------------

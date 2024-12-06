@@ -25,6 +25,7 @@ public:
    virtual pointer allocate()                    = 0;
    virtual void    deallocate(const pointer& p)  = 0;
    virtual size_t  freelist_memory_usage()       = 0;
+   virtual size_t  memory_overhead()             = 0;
 };
 
 template <class backing_allocator, std::size_t sz>
@@ -60,6 +61,11 @@ public:
       return _freelist_size * sizeof(T);
    }
 
+   size_t memory_overhead() final {
+      std::lock_guard g(_m);
+      return _memory_overhead;
+   }
+
 private:
    struct list_item { bip::offset_ptr<list_item> _next; };
    static constexpr size_t allocation_batch_size = 128;
@@ -70,6 +76,7 @@ private:
 
       char* result = (char*)&*_back_alloc.allocate(sizeof(T) * allocation_batch_size);
       _freelist_size += allocation_batch_size;
+      _memory_overhead += 16;
       _freelist = bip::offset_ptr<list_item>{(list_item*)result};
       for (unsigned i = 0; i < allocation_batch_size - 1; ++i) {
          char* next = result + sizeof(T);
@@ -82,6 +89,7 @@ private:
    backing_allocator          _back_alloc;
    bip::offset_ptr<list_item> _freelist;
    size_t                     _freelist_size = 0;
+   size_t                     _memory_overhead = 0; // overhead from boost segment allocator (16 bytes per block)
    std::mutex                 _m;
 };
 
@@ -108,10 +116,10 @@ private:
    std::array<base_alloc_ptr, num_allocators> _allocators;
 
    static constexpr size_t max_size = num_allocators * size_increment;
-   
+
    static constexpr size_t allocator_index(size_t sz_in_bytes) {
       assert(sz_in_bytes > 0);
-      return (sz_in_bytes -1) / size_increment;
+      return (sz_in_bytes - 1) / size_increment;
    }
 
    template <std::size_t... I>
@@ -127,17 +135,33 @@ public:
       , _allocators(make_allocators(back_alloc, std::make_index_sequence<num_allocators>{})) {}
 
    pointer allocate(std::size_t sz_in_bytes) {
-      if (sz_in_bytes <= max_size)
+      if (sz_in_bytes <= max_size) {
          return _allocators[allocator_index(sz_in_bytes)]->allocate();
+      }
       return _back_alloc.allocate(sz_in_bytes);
    }
 
    void deallocate(const pointer& p, std::size_t sz_in_bytes) {
-      if (sz_in_bytes <= max_size)
+      if (sz_in_bytes <= max_size) {
          _allocators[allocator_index(sz_in_bytes)]->deallocate(p);
-      else
+      } else
          _back_alloc.deallocate(p, sz_in_bytes);
    }
+
+   size_t freelist_memory_usage() const {
+      size_t sz = 0;
+      for (auto& alloc : _allocators)
+         sz += alloc->freelist_memory_usage();
+      return sz;
+   }
+
+   size_t memory_overhead() const {
+      size_t sz = 0;
+      for (auto& alloc : _allocators)
+         sz += alloc->memory_overhead();
+      return sz;
+   }
+
 };
 
 
