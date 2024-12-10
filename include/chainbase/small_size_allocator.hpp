@@ -68,7 +68,7 @@ public:
 
 private:
    struct list_item { bip::offset_ptr<list_item> _next; };
-   static constexpr size_t allocation_batch_size = 128;
+   static constexpr size_t allocation_batch_size = 512;
 
    void get_some() {
       static_assert(sizeof(T) >= sizeof(list_item), "Too small for free list");
