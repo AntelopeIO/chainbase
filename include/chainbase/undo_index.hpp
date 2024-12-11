@@ -694,26 +694,9 @@ namespace chainbase {
       template<int N = 0>
       bool insert_impl(value_type& p) {
          if constexpr (N < sizeof...(Indices)) {
-#if 0
-            auto& index = std::get<N>(_indices);
-            using index_t = std::decay_t<decltype(index)>;
-            std::pair<typename index_t::iterator, bool> pair;
-            constexpr bool has_insert_hint = requires(index_t& index, value_type& p) {
-               index.insert_unique(index.end(), p);
-            };
-            if constexpr (false && N == 1 && has_insert_hint) {
-               pair.first = index.insert_unique(index.end(), p);
-               pair.second = true;
-            } else {
-               pair = index.insert_unique(p);
-            }
-            if(!pair.second) return false;
-            auto guard = scope_exit{[&index,iter=pair.first]{ index.erase(iter); }};
-#else
             auto [iter, inserted] = std::get<N>(_indices).insert_unique(p);
             if(!inserted) return false;
             auto guard = scope_exit{[this,iter=iter]{ std::get<N>(_indices).erase(iter); }};
-#endif
             if(insert_impl<N+1>(p)) {
                guard.cancel();
                return true;
