@@ -512,13 +512,11 @@ namespace chainbase {
          template<typename ObjectType>
          void preallocate( size_t num )
          {
-#if 1
              if ( _read_only_mode ) {
                 BOOST_THROW_EXCEPTION( std::logic_error( "attempting to preallocate in read-only mode" ) );
              }
              typedef typename get_index_type<ObjectType>::type index_type;
              get_mutable_index<index_type>().preallocate( num );
-#endif
          }
 
          template<typename ObjectType, typename Constructor>

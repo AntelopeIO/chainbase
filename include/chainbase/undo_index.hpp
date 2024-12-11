@@ -350,9 +350,7 @@ namespace chainbase {
       };
 
       void preallocate( std::size_t num ) {
-#if 1
          _allocator.preallocate(num);
-#endif
       }
 
       // Exception safety: strong

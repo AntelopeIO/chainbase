@@ -49,7 +49,7 @@ namespace chainbase {
       }
 
       void preallocate(std::size_t num) {
-         if (num > allocation_batch_size)
+         if (num >= 2 * allocation_batch_size)
             get_some(((num - _freelist_size) + 7) & ~7);
       }
 
