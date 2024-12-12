@@ -263,7 +263,7 @@ pinnable_mapped_file::pinnable_mapped_file(const std::filesystem::path& dir, boo
 
 ss_allocator_t* pinnable_mapped_file::get_small_size_allocator(std::byte* seg_mgr) {
    db_header* header = reinterpret_cast<db_header*>(seg_mgr - header_size);
-   return (ss_allocator_t*)&*header->small_size_allocator;
+   return header->small_size_allocator ? (ss_allocator_t*)&*header->small_size_allocator : nullptr;
 }
 
 void pinnable_mapped_file::setup_copy_on_write_mapping() {
