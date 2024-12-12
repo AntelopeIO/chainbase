@@ -495,8 +495,12 @@ BOOST_AUTO_TEST_CASE(shared_vector_apis_segment_alloc) {
    // make sure we didn't leak memory
    // -------------------------------
    auto ss_alloc = pinnable_mapped_file::get_small_size_allocator((std::byte*)pmf.get_segment_manager());
-   BOOST_REQUIRE_EQUAL(free_memory, pmf.get_segment_manager()->get_free_memory() + ss_alloc->freelist_memory_usage() +
-                                       ss_alloc->memory_overhead());
+   auto num_blocks_allocated = ss_alloc->num_blocks_allocated();
+   auto lost = free_memory - (seg_mgr->get_free_memory() + ss_alloc->freelist_memory_usage());
+   std::cerr << "free_memory=" << free_memory << ", new_free_memory=" << (seg_mgr->get_free_memory() + ss_alloc->freelist_memory_usage()) << ", num_blocks_allocated=" << num_blocks_allocated << '\n';
+
+   // for every block allocated from the shared memory segment, we have an overhead of 8 or 16 bytes
+   BOOST_REQUIRE(lost == num_blocks_allocated * 8 || lost == num_blocks_allocated * 16);
 }
 
 // -----------------------------------------------------------------------------

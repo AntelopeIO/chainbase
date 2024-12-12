@@ -330,8 +330,8 @@ void pinnable_mapped_file::setup_non_file_mapping() {
       _non_file_mapped_mapping_size = (_non_file_mapped_mapping_size + (r-1u))/r*r;
    };
 
-   const unsigned _1gb = 1u<<30u;
-   const unsigned _2mb = 1u<<21u;
+   [[maybe_unused]] const unsigned _1gb = 1u<<30u;
+   [[maybe_unused]] const unsigned _2mb = 1u<<21u;
 
 #if defined(MAP_HUGETLB) && defined(MAP_HUGE_1GB)
    _non_file_mapped_mapping = mmap(NULL, _non_file_mapped_mapping_size, PROT_READ|PROT_WRITE, common_map_opts|MAP_HUGETLB|MAP_HUGE_1GB, -1, 0);

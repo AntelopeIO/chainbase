@@ -22,10 +22,10 @@ class allocator_base {
 public:
    using pointer = backing_allocator::pointer;
 
-   virtual pointer allocate()                    = 0;
-   virtual void    deallocate(const pointer& p)  = 0;
-   virtual size_t  freelist_memory_usage()       = 0;
-   virtual size_t  memory_overhead()             = 0;
+   virtual pointer allocate()                   = 0;
+   virtual void    deallocate(const pointer& p) = 0;
+   virtual size_t  freelist_memory_usage()      = 0;
+   virtual size_t  num_blocks_allocated()       = 0;
 };
 
 template <class backing_allocator, std::size_t sz>
@@ -61,9 +61,9 @@ public:
       return _freelist_size * sizeof(T);
    }
 
-   size_t memory_overhead() final {
+   size_t num_blocks_allocated() final {
       std::lock_guard g(_m);
-      return _memory_overhead;
+      return _num_blocks_allocated;
    }
 
 private:
@@ -76,7 +76,7 @@ private:
 
       char* result = (char*)&*_back_alloc.allocate(sizeof(T) * allocation_batch_size);
       _freelist_size += allocation_batch_size;
-      _memory_overhead += 16;
+      ++_num_blocks_allocated;
       _freelist = bip::offset_ptr<list_item>{(list_item*)result};
       for (unsigned i = 0; i < allocation_batch_size - 1; ++i) {
          char* next = result + sizeof(T);
@@ -88,8 +88,8 @@ private:
 
    backing_allocator          _back_alloc;
    bip::offset_ptr<list_item> _freelist;
-   size_t                     _freelist_size = 0;
-   size_t                     _memory_overhead = 0; // overhead from boost segment allocator (16 bytes per block)
+   size_t                     _freelist_size        = 0;
+   size_t                     _num_blocks_allocated = 0; // number of blocks allocated from boost segment allocator
    std::mutex                 _m;
 };
 
@@ -155,10 +155,10 @@ public:
       return sz;
    }
 
-   size_t memory_overhead() const {
+   size_t num_blocks_allocated() const {
       size_t sz = 0;
       for (auto& alloc : _allocators)
-         sz += alloc->memory_overhead();
+         sz += alloc->num_blocks_allocated();
       return sz;
    }
 
