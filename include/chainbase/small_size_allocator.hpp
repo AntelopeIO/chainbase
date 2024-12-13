@@ -28,6 +28,16 @@ public:
    virtual size_t  num_blocks_allocated()       = 0;
 };
 
+// ---------------------------------------------------------------------------------------
+//         One of the allocators from `small_size_allocator` below
+//         -------------------------------------------------------
+//
+// - allocates buffers of `sz` bytes.
+// - allocates in batch from `backing_allocator` (see `allocation_batch_size`)
+// - freed buffers are linked into a free list for fast further allocations
+// - allocated buffers are never returned to the `backing_allocator`
+// - thread-safe
+// ---------------------------------------------------------------------------------------
 template <class backing_allocator, std::size_t sz>
 class allocator : public allocator_base<backing_allocator> {
 public:
@@ -100,8 +110,10 @@ private:
 //          An array of 64 allocators for sizes from 8 to 512 bytes
 //          -------------------------------------------------------
 //
-//  All pointers used are of type `backing_allocator::pointer`
-//  allocate/deallocate specify size in bytes.
+//  - All pointers used are of type `backing_allocator::pointer`
+//  - allocate/deallocate specify size in bytes.
+//  - Any requested size greater than `num_allocators * size_increment` will be routed
+//    to the backing_allocator
 // ---------------------------------------------------------------------------------------
 template <class backing_allocator, size_t num_allocators = 64, size_t size_increment = 8>
 requires ((size_increment & (size_increment - 1)) == 0) // power of two
@@ -164,14 +176,18 @@ public:
 
 };
 
-
 // ---------------------------------------------------------------------------------------
 //          Object allocator
 //          ----------------
 //
 //  emulates the API of `bip::allocator<T, segment_manager>`
-//
-//  backing_allocator is `the small_size_allocator`
+//  backing_allocator is normally the `small_size_allocator`, in which case:
+// - If the allocation size (num_objects * sizeof(T)) is less than 512 bytes, it will be routed
+//   through the small size allocator which allocates in batch from the `segment_manager`.
+// - If the allocation size (num_objects * sizeof(T)) is greater than 512 bytes, the allocator
+//   will allocate directly from the segment manager.
+// - the 512 bytes limit is derived from the template parameters of `small_size_allocator`
+//   (size_t num_allocators = 64, size_t size_increment = 8)
 // ---------------------------------------------------------------------------------------
 template<typename T, class backing_allocator>
 class object_allocator {

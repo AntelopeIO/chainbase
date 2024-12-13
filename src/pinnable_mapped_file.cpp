@@ -254,6 +254,7 @@ pinnable_mapped_file::pinnable_mapped_file(const std::filesystem::path& dir, boo
 
    ss_allocator_t* ss_alloc = get_small_size_allocator(start); // relies on `_segment_manager` being initialized
    if (!ss_alloc && _writable) {
+      // create the unique `small_size_allocator` for this `segment_manager`
       db_header* header = reinterpret_cast<db_header*>(start - header_size);
       header->small_size_allocator = (char *)make_small_size_allocator<byte_segment_allocator_t>(_segment_manager);
    }

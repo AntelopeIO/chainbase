@@ -52,14 +52,18 @@ using byte_segment_allocator_t = segment_allocator_t<char>;
 
 using ss_allocator_t = small_size_allocator<byte_segment_allocator_t>;
 
+// An allocator for objects of type T within the segment_manager
+// -------------------------------------------------------------
+// - If the allocation size (num_objects * sizeof(T)) is less than 512 bytes, it will be routed
+//   through the small size allocator which allocates in batch from the `segment_manager`.
+// - If the allocation size (num_objects * sizeof(T)) is greater than 512 bytes, the allocator
+//   will allocate directly from the segment manager.
+// - the 512 bytes limit is derived from the template parameters of `small_size_allocator`
+//   (size_t num_allocators = 64, size_t size_increment = 8)
+// - emulates the API of `bip::allocator<T, segment_manager>`
+// ---------------------------------------------------------------------------------------------
 template<typename T>
-using allocator = object_allocator<T, ss_allocator_t>;
-
-template <class backing_allocator>
-auto make_small_size_allocator(segment_manager* seg_mgr) {
-   byte_segment_allocator_t byte_allocator(seg_mgr);
-   return new (seg_mgr->allocate(sizeof(ss_allocator_t))) ss_allocator_t(byte_allocator);
-}
+using allocator = object_allocator<T, ss_allocator_t>; 
 
 class pinnable_mapped_file {
    public:
@@ -139,6 +143,17 @@ class pinnable_mapped_file {
       constexpr static size_t                       _db_size_copy_increment       = 1024*1024*1024; //1GB
 };
 
+// There can be at most one `small_size_allocator` per `segment_manager` (hence the `assert` below).
+// There is none created if the pinnable_mapped_file is read-only.
+// ----------------------------------------------------------------------------------------------------
+template <class backing_allocator>
+auto make_small_size_allocator(segment_manager* seg_mgr) {
+   assert(pinnable_mapped_file::get_small_size_allocator((std::byte*)seg_mgr) == nullptr);
+   byte_segment_allocator_t byte_allocator(seg_mgr);
+   return new (seg_mgr->allocate(sizeof(ss_allocator_t))) ss_allocator_t(byte_allocator);
+}
+
+// Create an allocator for a specific object type. 
 // pointer can be to the segment manager, or any object contained within.
 // ---------------------------------------------------------------------
 template <class T>
