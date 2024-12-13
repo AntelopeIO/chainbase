@@ -17,17 +17,6 @@ namespace chainbase {
 
 namespace detail {
 
-template <class backing_allocator>
-class allocator_base {
-public:
-   using pointer = backing_allocator::pointer;
-
-   virtual pointer allocate()                   = 0;
-   virtual void    deallocate(const pointer& p) = 0;
-   virtual size_t  freelist_memory_usage()      = 0;
-   virtual size_t  num_blocks_allocated()       = 0;
-};
-
 // ---------------------------------------------------------------------------------------
 //         One of the allocators from `small_size_allocator` below
 //         -------------------------------------------------------
@@ -38,17 +27,16 @@ public:
 // - allocated buffers are never returned to the `backing_allocator`
 // - thread-safe
 // ---------------------------------------------------------------------------------------
-template <class backing_allocator, std::size_t sz>
-class allocator : public allocator_base<backing_allocator> {
+template <class backing_allocator>
+class allocator {
 public:
-   using T = std::array<char, sz>;
    using pointer = backing_allocator::pointer;
 
-   allocator(backing_allocator back_alloc) :
-      _back_alloc(back_alloc) {
-   }
+   allocator(backing_allocator back_alloc, std::size_t sz)
+      : _back_alloc(back_alloc)
+      , _sz(sz) {}
 
-   pointer allocate() final {
+   pointer allocate() {
       std::lock_guard g(_m);
       if (_freelist == nullptr) {
          get_some();
@@ -60,18 +48,18 @@ public:
       return pointer{(typename backing_allocator::value_type*)result};
    }
 
-   void deallocate(const pointer& p) final {
+   void deallocate(const pointer& p) {
       std::lock_guard g(_m);
       _freelist = new (&*p) list_item{_freelist};
       ++_freelist_size;
    }
 
-   size_t freelist_memory_usage() final {
+   size_t freelist_memory_usage() const {
       std::lock_guard g(_m);
-      return _freelist_size * sizeof(T);
+      return _freelist_size * _sz;
    }
 
-   size_t num_blocks_allocated() final {
+   size_t num_blocks_allocated() const {
       std::lock_guard g(_m);
       return _num_blocks_allocated;
    }
@@ -81,15 +69,15 @@ private:
    static constexpr size_t allocation_batch_size = 512;
 
    void get_some() {
-      static_assert(sizeof(T) >= sizeof(list_item), "Too small for free list");
-      static_assert(sizeof(T) % alignof(list_item) == 0, "Bad alignment for free list");
+      assert(_sz >= sizeof(list_item));
+      assert(_sz % alignof(list_item) == 0);
 
-      char* result = (char*)&*_back_alloc.allocate(sizeof(T) * allocation_batch_size);
+      char* result = (char*)&*_back_alloc.allocate(_sz * allocation_batch_size);
       _freelist_size += allocation_batch_size;
       ++_num_blocks_allocated;
       _freelist = bip::offset_ptr<list_item>{(list_item*)result};
       for (unsigned i = 0; i < allocation_batch_size - 1; ++i) {
-         char* next = result + sizeof(T);
+         char* next = result + _sz;
          new (result) list_item{bip::offset_ptr<list_item>{(list_item*)next}};
          result = next;
       }
@@ -97,10 +85,11 @@ private:
    }
 
    backing_allocator          _back_alloc;
+   std::size_t                _sz;
    bip::offset_ptr<list_item> _freelist;
    size_t                     _freelist_size        = 0;
    size_t                     _num_blocks_allocated = 0; // number of blocks allocated from boost segment allocator
-   std::mutex                 _m;
+   mutable std::mutex         _m;
 };
 
 } // namespace detail
@@ -119,13 +108,12 @@ template <class backing_allocator, size_t num_allocators = 64, size_t size_incre
 requires ((size_increment & (size_increment - 1)) == 0) // power of two
 class small_size_allocator {
 public:
-   using pointer = backing_allocator::pointer;
-
+   using pointer       = backing_allocator::pointer;
+   using alloc_ptr     = bip::offset_ptr<detail::allocator<backing_allocator>>;
+   using alloc_array_t = std::array<alloc_ptr, num_allocators>;
 private:
-   using base_alloc_ptr = bip::offset_ptr<detail::allocator_base<backing_allocator>>;
-
-   backing_allocator                          _back_alloc;
-   std::array<base_alloc_ptr, num_allocators> _allocators;
+   backing_allocator _back_alloc;
+   alloc_array_t     _allocators;
 
    static constexpr size_t max_size = num_allocators * size_increment;
 
@@ -136,9 +124,8 @@ private:
 
    template <std::size_t... I>
    auto make_allocators(backing_allocator back_alloc, std::index_sequence<I...>) {
-      return std::array<base_alloc_ptr, num_allocators>{
-         new (&*_back_alloc.allocate(sizeof(detail::allocator<backing_allocator, (I + 1) * size_increment>)))
-            detail::allocator<backing_allocator, (I + 1) * size_increment>(back_alloc)...};
+      return alloc_array_t{new (&*_back_alloc.allocate(sizeof(detail::allocator<backing_allocator>)))
+                              detail::allocator<backing_allocator>(back_alloc, (I + 1) * size_increment)...};
    }
 
 public:
@@ -173,7 +160,6 @@ public:
          sz += alloc->num_blocks_allocated();
       return sz;
    }
-
 };
 
 // ---------------------------------------------------------------------------------------
