@@ -56,7 +56,7 @@ namespace chainbase {
 
       void preallocate(std::size_t num) {
          if (num >= 2 * _allocation_batch_size)
-            get_some(((num - _freelist_size) + 7) & ~7);
+            get_some((num + 7) & ~7);
       }
 
       bool operator==(const chainbase_node_allocator& other) const { return this == &other; }
