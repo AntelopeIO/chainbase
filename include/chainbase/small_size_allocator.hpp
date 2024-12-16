@@ -90,7 +90,7 @@ private:
    bip::offset_ptr<char>      _block_start;
    bip::offset_ptr<char>      _block_end;
    backing_allocator          _back_alloc;
-   size_t                     _allocation_batch_size = 4;
+   size_t                     _allocation_batch_size = 32;
    size_t                     _freelist_size         = 0;
    size_t                     _num_blocks_allocated  = 0; // number of blocks allocated from boost segment allocator
    mutable std::mutex         _m;

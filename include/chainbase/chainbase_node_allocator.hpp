@@ -88,7 +88,7 @@ namespace chainbase {
       bip::offset_ptr<list_item>       _freelist{};
       bip::offset_ptr<ss_allocator_t>  _ss_alloc;
       bip::offset_ptr<segment_manager> _manager;
-      size_t                           _allocation_batch_size = 4;
+      size_t                           _allocation_batch_size = 32;
       size_t                           _freelist_size = 0;
    };
 
