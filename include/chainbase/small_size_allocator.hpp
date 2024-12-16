@@ -33,14 +33,20 @@ public:
    using pointer = backing_allocator::pointer;
 
    allocator(backing_allocator back_alloc, std::size_t sz)
-      : _back_alloc(back_alloc)
-      , _sz(sz) {}
+      : _sz(sz)
+      , _back_alloc(back_alloc) {}
 
    pointer allocate() {
       std::lock_guard g(_m);
-      if (_freelist == nullptr) {
+      if (_block_start == _block_end && _freelist == nullptr) {
          get_some();
       }
+      if (_block_start < _block_end) {
+         pointer result =  pointer{_block_start.get()};
+         _block_start += _sz;
+         return result;
+      }
+      assert(_freelist != nullptr);
       list_item* result = &*_freelist;
       _freelist         = _freelist->_next;
       result->~list_item();
@@ -56,7 +62,7 @@ public:
 
    size_t freelist_memory_usage() const {
       std::lock_guard g(_m);
-      return _freelist_size * _sz;
+      return _freelist_size * _sz + (_block_end - _block_start);
    }
 
    size_t num_blocks_allocated() const {
@@ -66,29 +72,27 @@ public:
 
 private:
    struct list_item { bip::offset_ptr<list_item> _next; };
-   static constexpr size_t allocation_batch_size = 512;
+   static constexpr size_t max_allocation_batch_size = 512;
 
    void get_some() {
       assert(_sz >= sizeof(list_item));
       assert(_sz % alignof(list_item) == 0);
 
-      char* result = (char*)&*_back_alloc.allocate(_sz * allocation_batch_size);
-      _freelist_size += allocation_batch_size;
+      _block_start = _back_alloc.allocate(_sz * _allocation_batch_size);
+      _block_end   = _block_start + _sz * _allocation_batch_size;
       ++_num_blocks_allocated;
-      _freelist = bip::offset_ptr<list_item>{(list_item*)result};
-      for (unsigned i = 0; i < allocation_batch_size - 1; ++i) {
-         char* next = result + _sz;
-         new (result) list_item{bip::offset_ptr<list_item>{(list_item*)next}};
-         result = next;
-      }
-      new (result) list_item{nullptr};
+      if (_allocation_batch_size < max_allocation_batch_size)
+         _allocation_batch_size *= 2;
    }
 
-   backing_allocator          _back_alloc;
    std::size_t                _sz;
    bip::offset_ptr<list_item> _freelist;
-   size_t                     _freelist_size        = 0;
-   size_t                     _num_blocks_allocated = 0; // number of blocks allocated from boost segment allocator
+   bip::offset_ptr<char>      _block_start;
+   bip::offset_ptr<char>      _block_end;
+   backing_allocator          _back_alloc;
+   size_t                     _allocation_batch_size = 4;
+   size_t                     _freelist_size         = 0;
+   size_t                     _num_blocks_allocated  = 0; // number of blocks allocated from boost segment allocator
    mutable std::mutex         _m;
 };
 
@@ -104,7 +108,7 @@ private:
 //  - Any requested size greater than `num_allocators * size_increment` will be routed
 //    to the backing_allocator
 // ---------------------------------------------------------------------------------------
-template <class backing_allocator, size_t num_allocators = 64, size_t size_increment = 8>
+template <class backing_allocator, size_t num_allocators = 128, size_t size_increment = 8>
 requires ((size_increment & (size_increment - 1)) == 0) // power of two
 class small_size_allocator {
 public:

@@ -26,9 +26,15 @@ namespace chainbase {
 
       pointer allocate(std::size_t num) {
          if (num == 1) {
-            if (_freelist == nullptr) {
-               get_some(allocation_batch_size);
+            if (_block_start == _block_end && _freelist == nullptr) {
+               get_some(_allocation_batch_size);
             }
+            if (_block_start < _block_end) {
+               pointer result =  pointer{static_cast<T*>(static_cast<void*>(_block_start.get()))};
+               _block_start += sizeof(T);
+               return result;
+            }
+            assert(_freelist != nullptr);
             list_item* result = &*_freelist;
             _freelist = _freelist->_next;
             result->~list_item();
@@ -49,41 +55,40 @@ namespace chainbase {
       }
 
       void preallocate(std::size_t num) {
-         if (num >= 2 * allocation_batch_size)
+         if (num >= 2 * _allocation_batch_size)
             get_some(((num - _freelist_size) + 7) & ~7);
       }
 
       bool operator==(const chainbase_node_allocator& other) const { return this == &other; }
       bool operator!=(const chainbase_node_allocator& other) const { return this != &other; }
       segment_manager* get_segment_manager() const { return _manager.get(); }
-      size_t freelist_memory_usage() const { return _freelist_size * sizeof(T); }
+      size_t freelist_memory_usage() const { return _freelist_size * sizeof(T) + (_block_end - _block_start); }
 
     private:
       template<typename T2, typename S2>
       friend class chainbase_node_allocator;
 
-      void get_some(size_t allocation_batch_size) {
+      void get_some(size_t num_to_alloc) {
          static_assert(sizeof(T) >= sizeof(list_item), "Too small for free list");
          static_assert(sizeof(T) % alignof(list_item) == 0, "Bad alignment for free list");
 
-         char* result = (char*)_manager->allocate(sizeof(T) * allocation_batch_size);
-         _freelist_size += allocation_batch_size;
-         auto old_freelist = _freelist;
-         _freelist = bip::offset_ptr<list_item>{(list_item*)result};
-         for(unsigned i = 0; i < allocation_batch_size-1; ++i) {
-            char* next = result + sizeof(T);
-            new(result) list_item{bip::offset_ptr<list_item>{(list_item*)next}};
-            result = next;
-         }
-         new(result) list_item{old_freelist};
+         _block_start = static_cast<char*>(_manager->allocate(sizeof(T) * num_to_alloc));
+         _block_end   = _block_start + sizeof(T) * num_to_alloc;
+
+         if (_allocation_batch_size < max_allocation_batch_size)
+            _allocation_batch_size *= 2;
       }
 
       struct list_item { bip::offset_ptr<list_item> _next; };
 
-      static constexpr size_t allocation_batch_size = 512;
+      static constexpr size_t max_allocation_batch_size = 512;
+      
+      bip::offset_ptr<char>            _block_start;
+      bip::offset_ptr<char>            _block_end;
+      bip::offset_ptr<list_item>       _freelist{};
       bip::offset_ptr<ss_allocator_t>  _ss_alloc;
       bip::offset_ptr<segment_manager> _manager;
-      bip::offset_ptr<list_item>       _freelist{};
+      size_t                           _allocation_batch_size = 4;
       size_t                           _freelist_size = 0;
    };
 
