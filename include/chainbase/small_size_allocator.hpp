@@ -133,7 +133,7 @@ private:
    }
 
 public:
-   small_size_allocator(backing_allocator back_alloc)
+   explicit small_size_allocator(backing_allocator back_alloc)
       : _back_alloc(std::move(back_alloc))
       , _allocators(make_allocators(back_alloc, std::make_index_sequence<num_allocators>{})) {}
 
@@ -186,7 +186,7 @@ public:
    using pointer      = char_pointer::template rebind<T>;
    using value_type   = T;
 
-   object_allocator(backing_allocator* back_alloc) :_back_alloc(back_alloc) {
+   explicit object_allocator(backing_allocator* back_alloc) :_back_alloc(back_alloc) {
    }
 
    pointer allocate(std::size_t num_objects) {
