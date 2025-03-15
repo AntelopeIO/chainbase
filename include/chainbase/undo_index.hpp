@@ -371,6 +371,30 @@ namespace chainbase {
          return p->_item;
       }
 
+      // Exception safety: strong
+      template<typename Tag, typename Constructor>
+      const value_type& emplace_in_order( Constructor&& c ) {
+         auto p = alloc_traits::allocate(_allocator, 1);
+         auto guard0 = scope_exit{[&]{ alloc_traits::deallocate(_allocator, p, 1); }};
+         auto new_id = _next_id;
+         auto constructor = [&]( value_type& v ) {
+            v.id = new_id;
+            c( v );
+         };
+         alloc_traits::construct(_allocator, &*p, constructor, constructor_tag());
+         auto guard1 = scope_exit{[&]{ alloc_traits::destroy(_allocator, &*p); }};
+         static_assert(boost::mp11::mp_contains<boost::mp11::mp_list<index_tag<Indices>...>, Tag>::value, "Given tag not valid for this multiindex");
+         const size_t tag_to_push_back = find_tag<Tag, Indices...>::value;
+         if(!insert_impl<1, tag_to_push_back>(p->_item))
+            BOOST_THROW_EXCEPTION( std::logic_error{ "could not insert object, most likely a uniqueness constraint was violated" } );
+         std::get<0>(_indices).push_back(p->_item); // cannot fail and we know that it will definitely insert at the end.
+         on_create(p->_item);
+         ++_next_id;
+         guard1.cancel();
+         guard0.cancel();
+         return p->_item;
+      }
+
       // Exception safety: basic.
       // If the modifier leaves the object in a state that conflicts
       // with another object, it will either be reverted or erased.
@@ -687,17 +711,28 @@ namespace chainbase {
          return ++_revision;
       }
 
-      template<int N = 0>
+      template<int N = 0, int PushBackN = -1>
       bool insert_impl(value_type& p) {
          if constexpr (N < sizeof...(Indices)) {
-            auto [iter, inserted] = std::get<N>(_indices).insert_unique(p);
-            if(!inserted) return false;
-            auto guard = scope_exit{[this,iter=iter]{ std::get<N>(_indices).erase(iter); }};
-            if(insert_impl<N+1>(p)) {
-               guard.cancel();
-               return true;
+            if constexpr(N == PushBackN) {
+               std::get<N>(_indices).push_back(p);
+               auto guard = scope_exit{[this,iter=std::prev(std::get<N>(_indices).end())]{ std::get<N>(_indices).erase(iter); }};
+               if(insert_impl<N+1, PushBackN>(p)) {
+                  guard.cancel();
+                  return true;
+               }
+               return false;
             }
-            return false;
+            else {
+               auto [iter, inserted] = std::get<N>(_indices).insert_unique(p);
+               if(!inserted) return false;
+               auto guard = scope_exit{[this,iter=iter]{ std::get<N>(_indices).erase(iter); }};
+               if(insert_impl<N+1, PushBackN>(p)) {
+                  guard.cancel();
+                  return true;
+               }
+               return false;
+            }
          }
          return true;
       }

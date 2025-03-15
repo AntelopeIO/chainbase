@@ -519,6 +519,16 @@ namespace chainbase {
              return get_mutable_index<index_type>().emplace( std::forward<Constructor>(con) );
          }
 
+         template<typename Tag, typename ObjectType, typename Constructor>
+         const ObjectType& create_in_order( Constructor&& con )
+         {
+            if ( _read_only_mode ) {
+               BOOST_THROW_EXCEPTION( std::logic_error( "attempting to create a record in read-only mode" ) );
+            }
+            typedef typename get_index_type<ObjectType>::type index_type;
+            return get_mutable_index<index_type>().template emplace_in_order<Tag>( std::forward<Constructor>(con) );
+         }
+
          database_index_row_count_multiset row_count_per_index()const {
             database_index_row_count_multiset ret;
             for(const auto& ai_ptr : _index_map) {
