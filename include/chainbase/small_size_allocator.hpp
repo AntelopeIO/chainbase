@@ -100,8 +100,8 @@ private:
 
 
 // ---------------------------------------------------------------------------------------
-//          An array of 64 allocators for sizes from 8 to 512 bytes
-//          -------------------------------------------------------
+//          An array of 128 allocators for sizes from 8 to 1024 bytes
+//          ---------------------------------------------------------
 //
 //  - All pointers used are of type `backing_allocator::pointer`
 //  - allocate/deallocate specify size in bytes.
@@ -172,12 +172,12 @@ public:
 //
 //  emulates the API of `bip::allocator<T, segment_manager>`
 //  backing_allocator is normally the `small_size_allocator`, in which case:
-// - If the allocation size (num_objects * sizeof(T)) is less than 512 bytes, it will be routed
+// - If the allocation size (num_objects * sizeof(T)) is less than 1024 bytes, it will be routed
 //   through the small size allocator which allocates in batch from the `segment_manager`.
-// - If the allocation size (num_objects * sizeof(T)) is greater than 512 bytes, the allocator
+// - If the allocation size (num_objects * sizeof(T)) is greater than 1024 bytes, the allocator
 //   will allocate directly from the segment manager.
-// - the 512 bytes limit is derived from the template parameters of `small_size_allocator`
-//   (size_t num_allocators = 64, size_t size_increment = 8)
+// - the 1024 bytes limit is derived from the template parameters of `small_size_allocator`
+//   (size_t num_allocators = 128, size_t size_increment = 8)
 // ---------------------------------------------------------------------------------------
 template<typename T, class backing_allocator>
 class object_allocator {
